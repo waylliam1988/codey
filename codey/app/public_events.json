@@ -201,6 +201,7 @@
       "run_id": true,
       "schema_version": true,
       "session_id": true,
+      "started_at_ms": true,
       "task_revision": true,
       "task_status": true,
       "type": true

@@ -5,6 +5,23 @@ from pathlib import Path
 from typing import Any
 
 from codey.durable.model import TaskCheckpoint
+from codey.workspace.changes import ChangeTracker, SnapshotStore
+
+
+class RunChangeTracker(ChangeTracker):
+    """Capture this run independently of the recovery baseline it may inherit."""
+
+    def __init__(self, recovery: ChangeTracker, store: SnapshotStore) -> None:
+        super().__init__(recovery.root, store)
+        self.recovery = recovery
+
+    def capture_before(self, rel: str) -> None:
+        self.recovery.capture_before(rel)
+        super().capture_before(rel)
+
+    def capture_after(self, rel: str) -> None:
+        super().capture_after(rel)
+        self.recovery.capture_after(rel)
 
 
 def task_change_tracker(state: Any, project: str | Path, task_id: str, *, source_id: str = "") -> Any:
@@ -24,8 +41,12 @@ def task_change_tracker(state: Any, project: str | Path, task_id: str, *, source
             scope = source.state.get("change_scope")
             if not isinstance(scope, str) or not scope:
                 raise ValueError("source task has no authoritative change baseline scope")
-        return {"change_scope": scope}
+        return {"change_scope": scope, "run_change_scope": f"run:{task_id}"}
 
     state.durable.transform_task_state(task_id, bind)
-    scope = state.durable.task(task_id).state["change_scope"]
-    return state.change_tracker_for(root, persistent=True, task_id=scope)
+    checkpoint = state.durable.task(task_id)
+    recovery = state.change_tracker_for(root, persistent=True, task_id=checkpoint.state["change_scope"])
+    run_scope = checkpoint.state.get("run_change_scope")
+    if run_scope != f"run:{task_id}":
+        return recovery
+    return RunChangeTracker(recovery, SnapshotStore(state.snapshot_store.state_home, task_id=run_scope))

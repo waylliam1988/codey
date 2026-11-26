@@ -2,6 +2,7 @@ import { Render } from '../render/render';
 import { mergeCommandResult } from './command_result';
 import { captureCommandOutput, restoreCommandOutput } from './command_output_view';
 import type { Message } from '../types/domain';
+import { createIconSvg, type Icon } from '../render/icon_button';
 /* Optional reasoning and trusted tool records, grouped by one user request. */
 export interface ProcessSnapshot {
   runId?: string;
@@ -172,8 +173,10 @@ function summary(block: ProcessBlock): void {
     blocked: 'Paused',
   };
   let text = titles[state.state] || 'Paused';
-  if (state.state === 'done' && state.elapsedMs !== undefined)
-    text += ' for ' + Math.max(1, Math.round(state.elapsedMs / 1000)) + 's';
+  if (state.state === 'done' && state.elapsedMs !== undefined) {
+    const seconds = Math.max(1, Math.round(state.elapsedMs / 1000));
+    text += ` for ${seconds >= 60 ? `${Math.floor(seconds / 60)}m ` : ''}${seconds % 60}s`;
+  }
   if (state.state === 'running')
     text += state.activity
       ? ' · ' + state.activity
@@ -274,6 +277,19 @@ function tool(block: ProcessBlock, m: ToolRecord): void {
       ? document.activeElement.tagName
       : '';
   const node = Render.standaloneToolEl(m, !!existing?.closest('.tool-group')) as HTMLElement;
+  const kind = Render.toolKind({ kind: m.kind, toolName: m.toolName });
+  const icons: Partial<Record<string, Icon>> = {
+    read: 'file',
+    search: 'search',
+    edit: 'edit',
+    write: 'edit',
+    run: 'terminal',
+  };
+  const icon = icons[kind || ''];
+  if (icon) {
+    const marker = createIconSvg(icon, 'process-step-icon');
+    (node.querySelector('.tool-row,.tool-summary,summary') ?? node).prepend(marker);
+  }
   if (existing) node.dataset.foldsegment = existing.dataset.foldsegment || '';
   if (children) node.append(children);
   const nextDisclosure = node.querySelector<HTMLDetailsElement>(':scope > .tool-disclosure');
@@ -338,7 +354,7 @@ function state(block: ProcessBlock, value: ProcessStatus, explicit = true): void
   block._process.activity = undefined;
   if (explicit && block._process.source !== 'checkpoint') block._process.source = 'workflow';
   const group = block.querySelector<HTMLDetailsElement>('.process-group');
-  if (group && value !== 'running' && !block._process.touched) group.open = false;
+  if (group && !block._process.touched) group.open = value === 'running';
   summary(block);
 }
 function append(chat: HTMLElement, m: Message, render: (chat: HTMLElement, message: Message) => void): boolean {

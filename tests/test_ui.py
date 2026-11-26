@@ -133,9 +133,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("ProviderUI.init({", HTML)
         self.assertIn("export const ProviderUI = {", PROVIDER_UI_JS)
         self.assertIn("function applyProviderStatus(rawProviders, isSSE = true", HTML)
-        self.assertIn("ProviderUI.applyStatus(providers, isSSE)", HTML)
+        self.assertIn("applyProviderStatus: ProviderUI.applyStatus", APP_RUNTIME_SOURCE)
         self.assertIn("function refreshProviderStatus(immediate = false)", HTML)
-        self.assertIn("ProviderUI.refreshStatus(immediate)", HTML)
+        self.assertIn("refreshProviderStatus: ProviderUI.refreshStatus", APP_RUNTIME_SOURCE)
         self.assertIn("../sse", APP_RUNTIME_SOURCE)
         self.assertIn("export const Sse = {", SSE_JS)
         self.assertIn("export const Composer = {", COMPOSER_JS)
@@ -157,7 +157,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
 
     def test_context_handoff_stays_hidden(self) -> None:
-        self.assertNotIn("fetch(\'/api/new_chat\'", APP_RUNTIME_SOURCE[APP_RUNTIME_SOURCE.index("function newSession("):APP_RUNTIME_SOURCE.index("async function forgetSessionState(")])
+        source = (ASSET_DIR / "state/session_state_store.ts").read_text(encoding="utf-8")
+        creation = source[source.index("  newSession("):source.index("  openProject(")]
+        self.assertNotIn("/api/new_chat", creation)
         self.assertNotIn("/compact", HTML)
         self.assertNotIn("context limit", HTML.lower().split("<dialog")[0])
         self.assertNotIn("context compression", HTML.lower())
@@ -366,11 +368,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
         self.assertNotIn("alert(", HTML)
-        self.assertIn("error: 'Could not add project'", HTML)
-        self.assertIn("setStatus(data.error, 'err')", APP_RUNTIME_SOURCE)
+        self.assertIn("deps.onError('Could not select a project folder')", _source("app/project_folder"))
+        self.assertIn("onError: (message) => setStatus(message, 'err')", APP_RUNTIME_SOURCE)
         self.assertIn("Run this command?", UI_SOURCE)
         self.assertIn("Decision could not be confirmed", UI_SOURCE)
-        self.assertIn("approvalController.submit(id, approved, scope)", HTML)
+        self.assertIn("this.approvals.submit(id, approved, scope)", HTML)
         self.assertNotIn("Failed to pick folder", HTML)
         self.assertNotIn("Shell approval failed", HTML)
         self.assertNotIn("approveShell", HTML)
@@ -529,8 +531,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         push_block = source[source.index("  pushMessage("):source.index("  addMessage(")]
         self.assertIn("this.deps.ui.persistNow();", push_block)
         self.assertNotIn("this.deps.ui.persist();", push_block)
-        self.assertIn("sessionState.addMessage(sid, m)", HTML)
-        self.assertIn("sessionState.pushMessage(sid, m)", HTML)
+        self.assertIn("sessionState.addMessage.bind(sessionState)", APP_RUNTIME_SOURCE)
+        self.assertIn("sessionState.pushMessage.bind(sessionState)", APP_RUNTIME_SOURCE)
         events = (ASSET_DIR / "runs/run_event_coordinator.ts").read_text(encoding="utf8")
         done_block = events[events.index("if (data.type === 'task_done')"):events.index("if (data.type === 'shell_request')")]
         self.assertIn("this.deps.ui.flush();", done_block)

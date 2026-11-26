@@ -1,6 +1,7 @@
 export interface AppAction {
   id: string;
   label: string;
+  terms?: string;
   run(): void;
 }
 
@@ -11,7 +12,7 @@ export class CommandPalette {
   private list = document.createElement('div');
   private visible: AppAction[] = [];
   private selected = 0;
-  constructor(private actions: () => AppAction[]) {
+  constructor(private actions: (query: string) => AppAction[]) {
     this.element.className = 'command-palette';
     this.element.setAttribute('aria-label', 'Commands');
     this.input.placeholder = 'Find an action…';
@@ -65,7 +66,9 @@ export class CommandPalette {
   }
   private render(): void {
     const query = this.input.value.trim().toLocaleLowerCase();
-    this.visible = this.actions().filter((action) => action.label.toLocaleLowerCase().includes(query));
+    this.visible = this.actions(query)
+      .filter((action) => `${action.label} ${action.terms || ''}`.toLocaleLowerCase().includes(query))
+      .slice(0, 40);
     this.list.replaceChildren();
     for (const [index, action] of this.visible.entries()) {
       const option = document.createElement('button');

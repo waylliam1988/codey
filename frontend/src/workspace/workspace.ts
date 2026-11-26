@@ -40,8 +40,15 @@ const initial = (): Layout => ({
 export class Workspace {
   readonly element = document.createElement('aside');
   readonly toggleButton = iconButton('Show right sidebar', 'workspace', () => {
-    if (this.element.hidden) this.select(this.layout.selected);
-    else this.close();
+    if (!this.element.hidden) this.close();
+    else if (this.layout.tabs.length || !this.defaultTabs.length) this.select(this.layout.selected);
+    else {
+      this.returnFocus = this.toggleButton;
+      this.layout.open = true;
+      this.render();
+      this.header.querySelector<HTMLElement>('[aria-label="Open in workspace"]')?.focus();
+      this.save();
+    }
   });
   private panels = new Map<PanelId, Panel>();
   private documentTabs: HTMLElement | null = null;
@@ -54,14 +61,19 @@ export class Workspace {
   private header = document.createElement('div');
   private body = document.createElement('div');
   private notice = document.createElement('div');
+  private empty = document.createElement('p');
+  private counts = new Map<PanelId, number>();
   private drag: { id: number; width: number } | null = null;
   private handle = document.createElement('div');
 
-  constructor() {
+  constructor(private readonly defaultTabs: PanelId[] = []) {
     this.element.id = 'right-workspace';
     this.element.className = 'workspace';
     this.element.hidden = true;
     this.element.setAttribute('aria-label', 'Workspace');
+    this.empty.className = 'workspace-empty';
+    this.empty.textContent = 'Open a view using the plus button.';
+    this.body.append(this.empty);
     this.toggleButton.id = 'workspace-toggle';
     this.toggleButton.disabled = true;
     this.toggleButton.setAttribute('aria-controls', this.element.id);
@@ -206,7 +218,7 @@ export class Workspace {
   }
 
   private get layout(): Layout {
-    if (!this.layouts.has(this.session)) this.layouts.set(this.session, initial());
+    if (!this.layouts.has(this.session)) this.layouts.set(this.session, { ...initial(), tabs: [...this.defaultTabs] });
     return this.layouts.get(this.session)!;
   }
   register(id: PanelId, label: string, element: HTMLElement, show: Panel['show']): void {
@@ -250,7 +262,13 @@ export class Workspace {
     this.session = session;
     this.suspended = false;
     this.render();
-    if (this.layout.open) this.select(this.layout.selected);
+    if (this.layout.open && this.layout.tabs.includes(this.layout.selected)) this.select(this.layout.selected);
+  }
+
+  count(id: PanelId, value: number): void {
+    this.counts.set(id, value);
+    const label = this.header.querySelector<HTMLElement>(`#workspace-tab-${id} .workspace-tab-count`);
+    if (label) label.textContent = value ? String(value) : '';
   }
   target(id: PanelId, target: Target): void {
     this.layout.targets[id] = { ...this.layout.targets[id], ...target };
@@ -306,10 +324,14 @@ export class Workspace {
     if (this.layout.selected === id) {
       const next = this.layout.tabs.at(-1);
       if (next) this.select(next);
-      else this.close();
+      else this.render();
     } else this.render();
     this.save();
-    if (!this.element.hidden) this.header.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+    if (!this.element.hidden)
+      (
+        this.header.querySelector<HTMLElement>('[aria-selected="true"]') ??
+        this.header.querySelector<HTMLElement>('[aria-label="Open in workspace"]')
+      )?.focus();
   }
   private captureScroll(): void {
     // DocumentPane owns scroll per file tab, including asynchronous reloads.
@@ -380,6 +402,10 @@ export class Workspace {
       const tab = document.createElement('button');
       tab.type = 'button';
       tab.textContent = this.panels.get(id)!.label;
+      const count = document.createElement('span');
+      count.className = 'workspace-tab-count';
+      count.textContent = String(this.counts.get(id) || '');
+      tab.append(count);
       tab.id = `workspace-tab-${id}`;
       tab.setAttribute('role', 'tab');
       tab.setAttribute('aria-selected', String(id === state.selected));
@@ -420,16 +446,18 @@ export class Workspace {
       this.menu.append(item);
     }
     this.header.append(
+      this.backButton(),
       tabs,
       open,
       modes,
       iconButton('Close workspace', 'close', () => this.close()),
     );
+    this.empty.hidden = !state.open || available.length > 0;
     for (const [id, panel] of this.panels) {
       panel.wrapper.id = `workspace-panel-${id}`;
       panel.wrapper.setAttribute('role', 'tabpanel');
       panel.wrapper.setAttribute('aria-label', panel.label);
-      panel.wrapper.hidden = !state.open || id !== state.selected;
+      panel.wrapper.hidden = !state.open || id !== state.selected || !available.includes(id);
       panel.wrapper.inert = panel.wrapper.hidden;
     }
     this.restoring = true;
@@ -444,5 +472,11 @@ export class Workspace {
       }
       this.restoring = false;
     });
+  }
+
+  private backButton(): HTMLButtonElement {
+    const back = iconButton('Back to conversation', 'arrow-left', () => this.close());
+    back.classList.add('workspace-back');
+    return back;
   }
 }

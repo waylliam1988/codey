@@ -64,8 +64,18 @@ function preferenceKey(sources: Record<string, ModelChoice>): string {
   );
 }
 function updateSaveState(): void {
-  $('model-settings-save').disabled =
-    saving || !draft || preferenceKey(currentDraft().preferences.sources) === baseline;
+  const current = draft ? preferenceKey(draft.preferences.sources) : baseline;
+  $('model-settings-save').disabled = saving || !draft || current === baseline;
+  const count = document.getElementById('model-change-count');
+  if (count) {
+    const previous = new Map<string, string>(
+      (JSON.parse(baseline || '[]') as unknown[][]).map((row) => [String(row[0]), JSON.stringify(row)]),
+    );
+    const choices = JSON.parse(current || '[]') as unknown[][];
+    const changed = choices.filter((row) => previous.get(String(row[0])) !== JSON.stringify(row)).length;
+    count.hidden = !changed;
+    count.textContent = `${changed} model source${changed === 1 ? '' : 's'} changed`;
+  }
 }
 function used(source: EditorSource, model?: string): boolean {
   return currentDraft().in_use.some((item: ModelUse) =>
@@ -255,9 +265,7 @@ function renderSource(source: EditorSource): HTMLElement {
     const availableIds = new Set(source.models.map((model) => model.id));
     const missing = choice.models.filter((id) => !availableIds.has(id));
     count.textContent =
-      choice.models.length -
-      missing.length +
-      ' selected' +
+      `${choice.models.length - missing.length} of ${availableIds.size} selected` +
       (missing.length ? ' · ' + missing.length + ' unavailable' : '');
     unavailable.hidden = !missing.length;
     if (missing.length && unavailable.parentElement !== body) body.appendChild(unavailable);

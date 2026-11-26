@@ -20,15 +20,8 @@ function apply(index: number, persist = false): void {
   const size = SIZES[safeIndex];
   document.documentElement.style.setProperty('--font-scale', String(size.scale));
 
-  const slider = document.getElementById('font-size-slider');
-  if (slider instanceof HTMLInputElement) {
-    slider.value = String(safeIndex);
-    slider.setAttribute('aria-valuetext', size.label);
-  }
-  const current = document.getElementById('font-size-current');
-  if (current) current.textContent = size.label;
-  document.querySelectorAll<HTMLElement>('.font-step[data-font]').forEach((dot) => {
-    dot.classList.toggle('is-selected', dot.dataset.font === size.id);
+  document.querySelectorAll<HTMLInputElement>('input[name="font-size"]').forEach((input) => {
+    input.checked = input.value === size.id;
   });
 
   if (persist) {
@@ -43,10 +36,9 @@ function apply(index: number, persist = false): void {
 export function mountAppearance(): void {
   apply(savedIndex());
 
-  const slider = document.getElementById('font-size-slider');
-  if (slider instanceof HTMLInputElement) {
-    slider.addEventListener('input', () => apply(slider.valueAsNumber, true));
-  }
+  document.querySelectorAll<HTMLInputElement>('input[name="font-size"]').forEach((input, index) => {
+    input.addEventListener('change', () => apply(index, true));
+  });
 
   window.addEventListener('storage', (event) => {
     if (event.key === STORAGE_KEY || event.key === null) apply(savedIndex());

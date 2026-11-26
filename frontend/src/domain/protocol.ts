@@ -25,6 +25,7 @@ type ServerPayload = {
   input?: unknown;
   preview?: import('../render/render').ToolPreview;
   elapsed_ms?: number;
+  started_at_ms?: number;
   phase?: string;
   stream_id?: string;
   sequence?: number;
@@ -214,6 +215,7 @@ export function decodeChangesData(value: unknown): ChangesData {
     ...(typeof value.mode === 'string' ? { mode: value.mode } : {}),
     ...(typeof value.error === 'string' ? { error: value.error } : {}),
     ...(typeof value.changed_count === 'number' ? { changed_count: value.changed_count } : {}),
+    ...(typeof value.undo_available === 'boolean' ? { undo_available: value.undo_available } : {}),
     ...(typeof value.truncated === 'boolean' ? { truncated: value.truncated } : {}),
     ...(isRecord(value.html_previews)
       ? {
@@ -346,6 +348,7 @@ export function decodeTaskStates(value: unknown): NonNullable<RunState['task_sta
       task_revision: row.task_revision,
       task_status: row.task_status,
       ...(typeof row.stop_reason === 'string' ? { stop_reason: row.stop_reason } : {}),
+      ...(sequence(row.task_change_count) ? { task_change_count: row.task_change_count } : {}),
     };
   });
 }
@@ -390,6 +393,7 @@ export function decodeRunState(value: unknown): RunState {
         ...(typeof entry.run_status === 'string' ? { run_status: entry.run_status } : {}),
         ...(typeof entry.project === 'string' || entry.project === null ? { project: entry.project } : {}),
         ...(typeof entry.provider === 'string' ? { provider: entry.provider } : {}),
+        ...(typeof entry.started_at_ms === 'number' ? { started_at_ms: entry.started_at_ms } : {}),
       };
     });
   }
@@ -532,6 +536,7 @@ function validateServerFields(
     'command_chars',
     'retry_after',
     'elapsed_ms',
+    'started_at_ms',
     'output_bytes',
     'output_stored_bytes',
   ]) {

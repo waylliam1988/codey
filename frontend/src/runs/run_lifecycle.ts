@@ -20,6 +20,7 @@ export interface LifecycleInput {
   active?: boolean;
   revision?: number;
   sequence?: number;
+  startedAt?: number;
   source: 'event' | 'snapshot' | 'admission';
 }
 
@@ -105,6 +106,7 @@ export class RunLifecycleProjection {
       terminal,
       restored: false,
       revision: input.revision ?? old?.revision,
+      startedAt: input.startedAt ?? old?.startedAt,
       sequence: input.sequence ?? (sameVersion ? old?.sequence : undefined),
       snapshotBarrier: (input.source === 'snapshot' && active) || (sameVersion && !!old?.snapshotBarrier),
     };

@@ -9,6 +9,7 @@ is never used as the admission lock.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -50,6 +51,7 @@ class RunSnapshot:
     status: str = "queued"
     stop_event: threading.Event = field(default_factory=threading.Event, compare=False, repr=False)
     worker_owned: bool = False
+    started_at_ms: int | None = None
 
 
 class RunRegistry:
@@ -278,7 +280,8 @@ class RunRegistry:
             run = self._active_runs.get(run_id)
             if run is None:
                 return False
-            self._active_runs[run_id] = replace(run, status="running", worker_owned=True)
+            self._active_runs[run_id] = replace(run, status="running", worker_owned=True,
+                                                started_at_ms=run.started_at_ms or time.time_ns() // 1_000_000)
             if self._current_run_id == run_id:
                 self._status = "running"
             return True
@@ -386,6 +389,7 @@ class RunRegistry:
                     "run_status": run.status,
                     "project": run.project,
                     "provider": run.provider_id,
+                    **({"started_at_ms": run.started_at_ms} if run.started_at_ms is not None else {}),
                 }
                 for run in self._active_runs.values()
             ]

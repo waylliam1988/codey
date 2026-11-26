@@ -51,6 +51,7 @@ export interface ConversationUiApi {
   menusClosed(restore?: boolean): void;
 }
 export interface ConversationUiDeps {
+  activityChanged?(): void;
   syncComposer?(): void;
   chatFork?: Pick<import('./chat_fork').ChatFork, 'showOrigin'>;
   userQuestions?: Pick<import('../runs/user_questions').UserQuestions, 'syncViews'>;
@@ -626,6 +627,18 @@ function scrollChat(capture = true) {
 }
 function updateLatest() {
   $('back-to-latest').hidden = !history.hasAfter(deps.getActiveId()) && (isFollowing() || viewport.isAtLatest());
+  const jump = document.getElementById('approval-jump');
+  if (!(jump instanceof HTMLButtonElement)) return;
+  const card = $('chat').querySelector<HTMLElement>('[data-approval-id][data-status="pending"]');
+  const area = $('chat-area').getBoundingClientRect();
+  const bounds = card?.getBoundingClientRect();
+  const id = card?.dataset.approvalId;
+  jump.hidden = !id || !bounds || (bounds.bottom > area.top && bounds.top < area.bottom);
+  if (id && !jump.hidden) {
+    jump.onclick = () => revealApproval(id);
+    const arrow = jump.querySelector('span');
+    if (arrow) arrow.textContent = bounds && bounds.bottom <= area.top ? '↑' : '↓';
+  }
 }
 
 function updateNotice() {
@@ -649,6 +662,7 @@ function updateNotice() {
       open.onclick = () => deps.switchSession(owner.id);
     } else if (open) open.remove();
   }
+  deps.activityChanged?.();
 }
 
 function openFile(path: string | null, project = '') {

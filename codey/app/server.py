@@ -332,6 +332,7 @@ _POST_ROUTES: dict[str, _PostRoute] = {
     "/api/changes/file": app_api.changes_file_response,
     "/api/documents/read": document_response,
     "/api/changes/restore": app_api.restore_changes_response,
+    "/api/run_changes/undo": app_api.undo_run_changes_response,
     "/api/shell_approval": _shell_approval_route,
     "/api/shell_approval/remember": _remember_approval,
     "/api/command_permissions/revoke": _revoke_command_permission,

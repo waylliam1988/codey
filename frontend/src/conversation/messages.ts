@@ -1,4 +1,5 @@
 import { ChangesDrawer } from '../workspace/changes_drawer';
+import { changeReceipt } from '../workspace/change_receipt';
 import { Process } from '../runs/process';
 import { Render } from '../render/render';
 import { Requests } from '../runs/requests';
@@ -321,13 +322,16 @@ function appendContent(chat: HTMLElement, m: Message): void {
           }
         : null;
     const text = m.text || 'Task complete';
-    chat.appendChild(
-      statusRow('Done', text, {
-        kind: 'done',
-        actions: RunDetails.actionsForMessage(m, action ? [action] : []),
-        copyText: text,
-      }),
+    const exists = Array.from(chat.querySelectorAll<HTMLElement>('[data-change-run]')).some(
+      (node) => node.dataset.changeRun === runId,
     );
+    const row = statusRow('Done', text, {
+      kind: 'done',
+      actions: RunDetails.actionsForMessage(m, action && !exists ? [action] : []),
+      copyText: text,
+    });
+    if (runId && action) row.dataset.changeFallback = runId;
+    chat.append(row);
   } else if (m.type === 'review') {
     const text = m.text || 'Complete';
     chat.appendChild(
@@ -337,50 +341,23 @@ function appendContent(chat: HTMLElement, m: Message): void {
       }),
     );
   } else if (m.type === 'changes') {
-    const div = document.createElement('div');
-    div.className = 'msg changes';
-    div.dataset.project = typeof m.project === 'string' ? m.project : currentProjectPath();
-    const head = document.createElement('div');
-    head.className = 'changes-head-row';
-    const label = document.createElement('span');
-    label.className = 'msg-label';
-    label.textContent = 'Changes';
-    const count = document.createElement('span');
-    count.className = 'changes-count';
-    const n = m.count || 0;
-    count.textContent = `${n} file${n === 1 ? '' : 's'}`;
-    head.append(label, count);
-    const sessionId = m.sessionId || activeId;
-    const runId = m.runId;
-    if (sessionId && runId) {
-      const view = document.createElement('button');
-      view.type = 'button';
-      view.className = 'link-btn';
-      view.textContent = 'View diff';
-      view.onclick = () => ChangesDrawer.openRun(div.dataset.project || '', sessionId, runId);
-      head.append(view);
-    }
-    div.appendChild(head);
-    const files = Array.isArray(m.files) ? m.files : [];
-    if (files.length) {
-      const list = document.createElement('div');
-      list.className = 'changes-files';
-      for (const f of files) {
-        const row = document.createElement('div');
-        row.className = 'changes-file';
-        row.innerHTML = `<span class="cf-status">${escapeHtml(f.status || 'M')}</span><button class="cf-path link-btn">${escapeHtml(f.path || '')}</button><span class="cf-stat">+${f.additions || 0} -${f.deletions || 0}</span>`;
-        const pathButton = row.querySelector<HTMLButtonElement>('.cf-path');
-        if (pathButton && sessionId && runId) {
-          pathButton.onclick = (event) => {
-            event.stopPropagation();
-            return ChangesDrawer.openRun(div.dataset.project || '', sessionId, runId, f.path);
-          };
-        }
-        list.appendChild(row);
+    const row = changeReceipt(m, m.sessionId || activeId, m.project || currentProjectPath());
+    const answer =
+      m.runId &&
+      Array.from(chat.querySelectorAll<HTMLElement>('.msg.asst[data-run-id]'))
+        .reverse()
+        .find((node) => node.dataset.runId === m.runId);
+    if (answer) answer.after(row);
+    else chat.append(row);
+    const fallback =
+      m.runId &&
+      Array.from(chat.querySelectorAll<HTMLElement>('[data-change-fallback]')).find(
+        (node) => node.dataset.changeFallback === m.runId,
+      );
+    if (fallback)
+      for (const button of fallback.querySelectorAll('button')) {
+        if (button.textContent === 'View diff') button.remove();
       }
-      div.appendChild(list);
-    }
-    chat.appendChild(div);
   } else if (m.type === 'shell_request') {
     const row = approvalRequest(
       {

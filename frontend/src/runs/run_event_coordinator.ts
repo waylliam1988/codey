@@ -53,6 +53,7 @@ export interface RunEventDeps {
   receiptChangedCount(receipt: unknown, changes: Partial<ChangesData>): number;
   maybeAddChangesSummary(sessionId: string, eventKey: string, runId: string): Promise<void>;
   previewHtml(sessionId: string, path: string, workspace: string): void;
+  settled?(sessionId: string, runId: string): void;
 }
 
 /** Apply durable facts to disposable browser projections in their original order. */
@@ -111,6 +112,7 @@ export class RunEventCoordinator {
       active: active ?? (state === 'running' ? true : undefined),
       revision: data.task_revision,
       sequence: eventSequence(cursor),
+      startedAt: data.started_at_ms,
       source,
     });
     if (!view) return false;
@@ -122,6 +124,7 @@ export class RunEventCoordinator {
         this.recordRunState(target.id, runId, target === owner || !view.active ? view.state : 'unknown', data, cursor);
     }
     if (view.active) this.deps.composer.observeRun?.(sessionId, runId);
+    if (source === 'event' && view.terminal && view.state === 'done') this.deps.settled?.(sessionId, runId);
     this.deps.requests.projectLifecycle({ ...data, session_id: sessionId, run_id: runId }, view.state);
     this.deps.ui.persist();
     if (this.projection.size) this.deps.transport.displayRunStatus('running');
@@ -498,8 +501,8 @@ export class RunEventCoordinator {
         this.deps.state.addMessage(sid, { type: 'done', text: summary, sessionId: sid, runId, eventKey: terminalKey });
       }
       if (reason === 'done' && sid && runId) void this.deps.history.syncAnswerIdentity(sid, runId);
-      if (reason !== 'error' && reason !== 'approval' && data.changed && !shownReceipt)
-        this.deps.maybeAddChangesSummary(sid, terminalKey, runId);
+      if (reason !== 'error' && reason !== 'approval' && data.changed)
+        this.deps.maybeAddChangesSummary(sid, shownReceipt ? `${terminalKey}:changes` : terminalKey, runId);
       this.deps.ui.flush();
       return;
     }
@@ -578,7 +581,12 @@ export class RunEventCoordinator {
     }
   }
 
-  projectTaskStates(tasks: HistoryTask[], owners: Map<string, string>, historySessionId?: string): void {
+  projectTaskStates(
+    tasks: HistoryTask[],
+    owners: Map<string, string>,
+    historySessionId?: string,
+    starts?: Map<string, number>,
+  ): void {
     for (const row of tasks) {
       const state = lifecycleState(row.task_status, row.stop_reason, 'idle');
       this.applyLifecycle(
@@ -589,19 +597,28 @@ export class RunEventCoordinator {
               session_id: row.session_id,
               task_revision: row.task_revision,
               task_status: row.task_status,
+              started_at_ms: starts?.get(row.run_id),
             }
           : { ...row, type: 'task_done' },
         'snapshot',
         state === 'running' || (owners.has(row.run_id) && ['approval', 'question', 'waiting'].includes(state)),
         historySessionId,
       );
+      if (historySessionId === row.session_id && state === 'done' && row.task_change_count) {
+        void this.deps.maybeAddChangesSummary(row.session_id, `terminal:${row.run_id}:changes`, row.run_id);
+      }
     }
   }
 
   applyRunState(data: RunState) {
     const owners = new Map((data.active_runs || []).map((run) => [run.run_id, run.session_id]));
     if (data.busy && data.run_id && data.session_id) owners.set(data.run_id, data.session_id);
-    this.projectTaskStates(data.task_states || [], owners);
+    const starts = new Map(
+      (data.active_runs || []).flatMap((run) =>
+        typeof run.started_at_ms === 'number' ? [[run.run_id, run.started_at_ms] as const] : [],
+      ),
+    );
+    this.projectTaskStates(data.task_states || [], owners, undefined, starts);
     (data.shell_approvals || []).forEach(this.deps.approvals().apply);
     if (data.last_shell_result) this.handleServerEvent(data.last_shell_result);
     if (data.last_terminal_event) this.handleServerEvent(data.last_terminal_event, 'snapshot');

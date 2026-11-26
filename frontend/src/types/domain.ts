@@ -116,6 +116,9 @@ interface MessageFields extends importToolDisplay {
   source?: { actor_id: string; name: string; kind: string };
   entryId?: string;
   elapsedMs?: number;
+  undoAvailable?: boolean;
+  additions?: number;
+  deletions?: number;
   queuedInputId?: string;
   streamId?: string;
   streamSequence?: number;
@@ -245,7 +248,7 @@ export type Message =
       'request_status' | 'request_activity',
       'requestId' | 'state' | 'sendFailure' | 'runOwner' | 'supersededRunIds'
     >
-  | MessageVariant<'changes', 'count' | 'files' | 'project' | 'changed'>
+  | MessageVariant<'changes', 'count' | 'files' | 'project' | 'changed' | 'undoAvailable' | 'additions' | 'deletions'>
   | MessageVariant<
       'done' | 'research_done' | 'err' | 'pause' | 'limit' | 'review',
       'payload' | 'elapsedMs' | 'failure' | 'status' | 'changed' | 'project' | 'sendFailure' | 'runOwner'
@@ -316,6 +319,7 @@ export interface ChangesData {
   error?: string;
   conflicts?: string[];
   changed_count?: number;
+  undo_available?: boolean;
   truncated?: boolean;
   html_previews?: Record<string, string>;
   verification?: ChangeVerification;
@@ -430,6 +434,7 @@ export interface RunState {
     task_revision: number;
     task_status: string;
     stop_reason?: string;
+    task_change_count?: number;
   }>;
   response_ack_run_id?: string;
   shell_approvals?: ApprovalState[];
@@ -447,5 +452,6 @@ export interface RunState {
     run_status?: string;
     project?: string | null;
     provider?: string;
+    started_at_ms?: number;
   }>;
 }

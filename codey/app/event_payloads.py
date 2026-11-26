@@ -19,12 +19,14 @@ MAX_FINAL_SUMMARY_CHARS = 64_000
 
 
 def _payload_task_start(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
+    started_at = event.get("started_at_ms")
     return {
         **common,
         "project": clip_event_text(event.get("project") or "", 500),
         "provider": clip_event_text(event.get("provider") or "", 80),
         "mode": clip_event_text(event.get("mode") or "", 40),
         "max_turns": _int_or_zero(event.get("max_turns")),
+        **({"started_at_ms": started_at} if type(started_at) is int and started_at > 0 else {}),
     }
 
 

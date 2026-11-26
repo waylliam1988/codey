@@ -18,6 +18,7 @@ def record_task_changes(
     *,
     checks_passed: bool | None,
     receipt: dict[str, object],
+    durable: DurableSession | None = None,
 ) -> None:
     reference = None
     reason = ""
@@ -38,6 +39,9 @@ def record_task_changes(
         changes, checks_passed=checks_passed, receipt=receipt,
         diff_artifact=reference, diff_unavailable=reason,
     )
+    count = changes.get("changed_count") if changes else None
+    if durable is not None and reference is not None and type(count) is int and count > 0:
+        durable.transform_task_state(ledger.run_id, lambda _: {"task_change_count": count})
 
 
 def load_task_changes(

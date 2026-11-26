@@ -861,7 +861,7 @@ class ChangeTracker:
         """Observe current per-file recoverability without removing any baselines."""
         return tuple((rel, self._restore_status(rel)[0]) for rel in self._restore_paths(paths))
 
-    def restore(self, paths: list[str] | None = None) -> RestoreResult:
+    def restore(self, paths: list[str] | None = None, *, keep_baselines: bool = False) -> RestoreResult:
         restored: list[str] = []
         conflicts: list[str] = []
 
@@ -869,7 +869,8 @@ class ChangeTracker:
             with self._lock:
                 state, path = self._restore_status(rel)
                 if state == "already_restored":
-                    self._forget_locked(rel)
+                    if not keep_baselines:
+                        self._forget_locked(rel)
                     continue
                 if state != "restorable" or path is None:
                     conflicts.append(rel)
@@ -885,7 +886,8 @@ class ChangeTracker:
                     conflicts.append(rel)
                     continue
                 restored.append(rel)
-                self._forget_locked(rel)
+                if not keep_baselines:
+                    self._forget_locked(rel)
 
         return RestoreResult(not conflicts, restored, conflicts, None if not conflicts else "restore conflict")
 

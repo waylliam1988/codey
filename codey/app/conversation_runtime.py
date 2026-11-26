@@ -29,6 +29,7 @@ class ConversationRuntime:
         kind, run_id = payload.get("type"), str(payload.get("run_id") or "")
         if kind == "task_start" and run_id:
             self.starts.setdefault(run_id, time.monotonic())
+            payload["started_at_ms"] = time.time_ns() // 1_000_000
             self.admissions[run_id] = {
                 "intent": str(payload.get("intent") or "auto"),
                 "max_turns": payload.get("max_turns", 50),

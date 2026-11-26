@@ -15,6 +15,7 @@ export interface ChangesDrawerDeps {
   fetchRunChanges(sessionId: string, runId: string): Promise<ChangesData>;
   fetchChangeFile(project: string, path: string): Promise<ChangeFilePreview>;
   restoreChanges(project: string): Promise<RestoreChangesResult>;
+  viewed?(sessionId: string, runId: string): void;
   escapeHtml(text: string): string;
   previewHtml(project: string, path: string): void;
 }
@@ -132,7 +133,7 @@ async function openChangesDrawer(project: string, path = '', run: typeof activeR
   selectedPath = path;
   const workspace = deps.workspace;
   const ui: UiStateApi = UiState;
-  if (!run) workspace?.target('changes', { path });
+  workspace?.target('changes', { path, runId: run?.runId || '' });
   const scope = $('changes-scope');
   scope.textContent = ui.pathName(project);
   scope.title = project;
@@ -157,6 +158,7 @@ async function loadChangesDrawer(project: string): Promise<boolean> {
       throw new Error(data?.error || 'Invalid changes result');
     renderChangesDrawer(data);
     fresh = true;
+    if (activeRun && data.diff) deps.viewed?.(activeRun.sessionId, activeRun.runId);
     focusPath();
     return true;
   } catch (err) {

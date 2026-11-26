@@ -253,7 +253,8 @@ def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps
     receipt: dict[str, object] = build_task_receipt(changes, proof=result.proof, checks_passed=checks_passed).to_dict()
     if work.ledger is not None:
         hooks.append_ledger(lambda ledger: record_task_changes(
-            ledger, deps.managed_outputs, changes, checks_passed=checks_passed, receipt=receipt))
+            ledger, deps.managed_outputs, changes, checks_passed=checks_passed, receipt=receipt,
+            durable=deps.state.durable))
     value = changes.get("files")
     files = list(value[:3]) if sequence_items(value) else []
     payload: dict[str, object] = {"changed_count": changes.get("changed_count", 0),

@@ -40,6 +40,11 @@ export class RunProjection {
     return null;
   }
 
+  forSession(sessionId: string): LifecycleView | undefined {
+    const id = this.runIdForSession(sessionId);
+    return id ? this.lifecycle.current(id) : undefined;
+  }
+
   entries(): Array<[string, string]> {
     return [...this.activeRuns.entries()];
   }

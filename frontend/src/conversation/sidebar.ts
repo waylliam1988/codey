@@ -247,6 +247,11 @@ export function createSidebar(deps: SidebarDeps): Sidebar {
     title.textContent = session.title || 'Untitled';
     title.onclick = () => deps.switchSession(session.id);
     item.appendChild(title);
+    const status = document.createElement('span');
+    status.className = 'chat-state';
+    status.dataset.chatStatus = session.id;
+    status.hidden = true;
+    item.append(status);
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'session-more';

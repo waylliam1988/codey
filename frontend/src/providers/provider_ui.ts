@@ -33,6 +33,7 @@ export interface ProviderUiDeps {
 
 export interface ProviderUiApi {
   init(deps: ProviderUiDeps): void;
+  setBusy(busy: boolean): void;
   label(id: string): string;
   sync(providerId: string): void;
   applyConfig(data: unknown): boolean;
@@ -156,13 +157,22 @@ function buildProviderMenu() {
   $('provider-button').setAttribute('aria-controls', 'provider-menu');
   $('provider-button').setAttribute('aria-haspopup', 'dialog');
   const focusedKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.key : undefined;
-  menu.querySelectorAll('.provider-item').forEach((btn: Element) => btn.remove());
-  for (const id of PROVIDERS) {
+  menu.querySelectorAll('.provider-item,.provider-group-label').forEach((btn: Element) => btn.remove());
+  let group = '';
+  for (const id of [...PROVIDERS].sort((a, b) => Number(!!apiModels[a]) - Number(!!apiModels[b]))) {
     const connection = apiModels[id];
     const localModels = connection ? connection.models.map((item: ProviderModel) => item.id) : [''];
     if (connection && !localModels.length) localModels.push('');
     for (const model of localModels) {
       if (!Models.allows(id, model)) continue;
+      const source = connection ? providerLabel(id) : 'Websites';
+      if (group !== source) {
+        group = source;
+        const heading = document.createElement('div');
+        heading.className = 'provider-group-label';
+        heading.textContent = source;
+        menu.insertBefore(heading, warning);
+      }
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'provider-item';
@@ -266,7 +276,11 @@ function openMenu() {
   syncModelMenuWidth();
   highlightedProvider = selectedKey();
   highlightModel();
-  (modelRows().find((row) => row.dataset.key === highlightedProvider) || modelRows()[0])?.focus();
+  (
+    modelRows().find((row) => row.dataset.key === highlightedProvider) ||
+    modelRows()[0] ||
+    document.getElementById('manage-models')
+  )?.focus();
   refreshProviderStatus(true);
   // Legacy form retained for callers without an immediate probe: refreshProviderStatus();
 }
@@ -719,6 +733,13 @@ function runSelection(s: Session | undefined, provider: string) {
 }
 
 function bindHandlers() {
+  const manage = document.getElementById('manage-models');
+  if (manage)
+    manage.onclick = () => {
+      closeMenu(true);
+      void Settings.open($('provider-button'));
+      document.getElementById('models-section-title')?.focus();
+    };
   $('provider-button').onclick = (e) => {
     if (button('provider-button').disabled) return;
     e.stopPropagation();
@@ -813,6 +834,10 @@ function bindHandlers() {
 }
 
 export const ProviderUI = {
+  setBusy(busy: boolean) {
+    button('provider-button').disabled = busy;
+    button('effort-button').disabled = busy;
+  },
   init,
   label: providerLabel,
   sync: syncProviderUI,

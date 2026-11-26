@@ -9,12 +9,25 @@ export type Icon =
   | 'expand'
   | 'dock'
   | 'workspace'
+  | 'sidebar'
+  | 'folder'
+  | 'globe'
+  | 'file'
+  | 'search'
+  | 'terminal'
   | 'branch'
   | 'chevron-down'
   | 'trash'
   | 'plus';
 const paths: Record<Icon, string> = {
   plus: 'M12 5v14M5 12h14',
+  sidebar:
+    'M5 2.5h14A2.5 2.5 0 0 1 21.5 5v14a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V5A2.5 2.5 0 0 1 5 2.5ZM9.5 2.5v19',
+  folder: 'M3 7h6l2 2h10v10H3z',
+  globe: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3a14 14 0 0 0 0 18m0-18a14 14 0 0 1 0 18',
+  file: 'M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6',
+  search: 'M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Zm-2 5 5 5',
+  terminal: 'M3 4h18v16H3zM7 9l3 3-3 3m6 0h4',
   'arrow-left': 'M19 12H5m7-7-7 7 7 7',
   'arrow-down': 'M12 5v14m-7-7 7 7 7-7',
   'chevron-down': 'm6 9 6 6 6-6',

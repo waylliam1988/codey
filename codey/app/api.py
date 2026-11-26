@@ -47,6 +47,7 @@ from codey.utils.object_fields import object_fields, sequence_items
 from codey.utils.refs import coerce_int
 from codey.workspace.changes import (
     ChangeTracker,
+    SnapshotStore,
     collect_changes,
     collect_git_file_diff,
     is_git_repository,
@@ -464,7 +465,66 @@ def run_changes_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[
     if not session_id or not run_id:
         return 400, {"ok": False, "error": "session_id and run_id required"}
     changes = load_task_changes(ctx.run_ledgers, ctx.managed_outputs, session_id, run_id, durable=ctx.durable)
-    return (200, changes) if changes is not None else (404, {"ok": False, "error": "Run changes unavailable"})
+    if changes is None:
+        return 404, {"ok": False, "error": "Run changes unavailable"}
+    changes["undo_available"] = bool(
+        changes.get("mode") == "snapshot" and changes.get("changed_count")
+        and _run_undo_scope(ctx, session_id, run_id) is not None
+    )
+    return 200, changes
+
+
+def _run_undo_scope(ctx: AppContext, session_id: str, run_id: str) -> tuple[str, SnapshotStore] | None:
+    try:
+        task = ctx.durable.task(run_id)
+    except KeyError:
+        return None
+    project = task.state.get("project")
+    scope = task.state.get("run_change_scope")
+    if (task.conversation_id != session_id or task.status != "completed"
+            or not isinstance(scope, str) or scope != f"run:{run_id}"
+            or not isinstance(project, str) or not project):
+        return None
+    root = str(Path(project).resolve())
+    store = SnapshotStore(ctx.snapshot_store.state_home, task_id=scope)
+    return (root, store) if store.path_for(root).is_file() else None
+
+
+def undo_run_changes_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
+    from codey.runs.task_diff import load_task_changes
+
+    session_id, run_id, preview = body.get("session_id"), body.get("run_id"), body.get("preview", False)
+    if not isinstance(session_id, str) or not session_id or not isinstance(run_id, str) or not run_id or not isinstance(preview, bool):
+        return 400, {"ok": False, "error": "A session, task and valid preview flag are required"}
+    scope = _run_undo_scope(ctx, session_id, run_id)
+    changes = load_task_changes(ctx.run_ledgers, ctx.managed_outputs, session_id, run_id)
+    if scope is None or not changes or changes.get("mode") != "snapshot" or not changes.get("changed_count"):
+        return 404, {"ok": False, "error": "Undo is unavailable for this task"}
+    project, store = scope
+    if ctx.has_active_run_for_project(project) or not ctx.acquire_project_writer(project):
+        return 409, {"ok": False, "error": "The project is busy"}
+    try:
+        if ctx.has_active_run_for_project(project):
+            return 409, {"ok": False, "error": "The project is busy"}
+        tracker = ChangeTracker(project, store)
+        files = changes.get("files")
+        if not isinstance(files, list):
+            return 404, {"ok": False, "error": "Task files are unavailable"}
+        states = dict(tracker.preview_restore())
+        paths = [row["path"] for row in files if isinstance(row, dict) and isinstance(row.get("path"), str)]
+        if len(set(paths)) != changes["changed_count"]:
+            return 409, {"ok": False, "error": "The full list of task files is unavailable"}
+        conflicts = [path for path in paths if states.get(path) not in {"restorable", "already_restored"}]
+        if conflicts:
+            return 409, {"ok": False, "conflicts": conflicts, "error": "Files changed since this task"}
+        if preview:
+            return 200, {"ok": True, "files": [path for path in paths if states.get(path) == "restorable"]}
+        result = tracker.restore(paths, keep_baselines=True)
+        return (200 if result.ok else 409), {
+            "ok": result.ok, "restored": result.restored, "conflicts": result.conflicts, "error": result.error,
+        }
+    finally:
+        ctx.release_project_writer(project)
 
 
 def run_review_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
@@ -911,6 +971,7 @@ __all__ = [
     "research_notes_response",
     "research_restore_response",
     "restore_changes_response",
+    "undo_run_changes_response",
     "run_details_response",
     "run_changes_response",
     "run_review_response",

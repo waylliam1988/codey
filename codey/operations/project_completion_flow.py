@@ -273,6 +273,7 @@ def _finalize_project(ctx: ProjectRun) -> ModeOutcome:
     from codey.runs.task_diff import record_task_changes
 
     assert ctx.result is not None
+    assert ctx.state is not None
     result = ctx.result
     receipt = build_task_receipt(
         ctx.task_changes,
@@ -287,6 +288,7 @@ def _finalize_project(ctx: ProjectRun) -> ModeOutcome:
             ledger, ctx.deps.persistence.managed_outputs, ctx.task_changes,
             checks_passed=result.checks_passed,
             receipt=receipt.to_dict(),
+            durable=ctx.state.durable,
         )
     )
     facts_write_succeeded = _persist_verified_project_facts(ctx)

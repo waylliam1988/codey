@@ -48,6 +48,7 @@
     </button>
   </div>
 </aside>
+<button type="button" id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Close left sidebar" tabindex="-1"></button>
 
 <main>
   <div class="topbar">
@@ -57,6 +58,7 @@
     <div class="sess-title" id="sess-title">New chat</div>
     <div class="topbar-actions">
       <div class="status" id="status"></div>
+      <button type="button" class="link-btn top-changes" id="top-changes" hidden></button>
     </div>
   </div>
 
@@ -71,6 +73,11 @@
 
   <div class="composer-wrap">
     <div class="composer">
+      <button class="approval-jump" id="approval-jump" type="button" hidden>Waiting for your approval <span aria-hidden="true">↓</span></button>
+      <div class="composer-notice" id="model-notice" role="status" hidden></div>
+      <div class="composer-box">
+        <textarea disabled id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
+      <div class="composer-bar">
       <div class="composer-context-row">
         <div class="composer-context" id="composer-context"></div>
         <div class="ui-save-notice" id="ui-save-notice" role="status" hidden>
@@ -80,10 +87,6 @@
           <button type="button" class="link-btn" id="ui-save-retry">Retry</button>
         </div>
       </div>
-      <div class="composer-notice" id="model-notice" role="status" hidden></div>
-      <div class="composer-box">
-        <textarea disabled id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
-      <div class="composer-bar">
         <div class="provider-chooser">
           <button type="button" class="provider-button" id="provider-button" aria-label="Choose model" disabled>
             <span class="dot" id="provider-dot"></span>
@@ -95,6 +98,7 @@
                  do not hand-edit a second copy here. -->
             <div class="provider-probe-warning" id="model-menu-empty" hidden>No models enabled</div>
             <div class="provider-probe-warning" id="provider-probe-warning" hidden>Provider status unavailable</div>
+            <button type="button" class="provider-manage" id="manage-models">Manage models…</button>
           </div>
         </div>
         <div class="effort-chooser" id="effort-chooser" hidden>
@@ -130,21 +134,16 @@
         <div class="model-source-body">
           <div class="appearance-row">
             <span id="font-size-label">Font size</span>
-            <div class="font-size-control">
-              <div class="font-slider">
-                <span class="font-step is-selected" data-font="standard" aria-hidden="true"></span>
-                <span class="font-step" data-font="large" aria-hidden="true"></span>
-                <span class="font-step" data-font="extra" aria-hidden="true"></span>
-                <input type="range" id="font-size-slider" min="0" max="2" step="1"
-                  value="0" aria-labelledby="font-size-label" aria-valuetext="Standard" />
-              </div>
-              <span class="font-size-current" id="font-size-current">Standard</span>
+            <div class="font-size-options" role="radiogroup" aria-labelledby="font-size-label">
+              <label><input type="radio" name="font-size" value="standard" checked><span>Standard</span></label>
+              <label><input type="radio" name="font-size" value="large"><span>Large</span></label>
+              <label><input type="radio" name="font-size" value="extra"><span>Extra large</span></label>
             </div>
           </div>
         </div>
       </details>
     </section>
-    <h3 class="models-section-title">Models</h3>
+    <h3 class="models-section-title" id="models-section-title" tabindex="-1">Models</h3>
     <p class="settings-hint">Choose which models Codey can use. Websites open when you send a message.</p>
     <p class="settings-hint" id="model-settings-loading" hidden>Loading models…</p>
     <div id="model-source-list"></div>
@@ -190,6 +189,7 @@
     <p class="local-config-error" id="model-settings-error" role="status"></p>
     <button type="button" class="link-btn" id="model-settings-retry" hidden>Retry</button>
     <div class="local-config-actions model-settings-actions">
+      <span class="model-change-count" id="model-change-count" aria-live="polite" hidden></span>
       <button type="button" class="text-btn" id="model-settings-cancel">Cancel</button>
       <button type="button" class="text-btn primary" id="model-settings-save">Save changes</button>
     </div>

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from codey.app.api import run_changes_response, undo_run_changes_response
+from codey.app.context import AppContext
+from codey.operations.task_changes import task_change_tracker
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.task_diff import load_task_changes, record_task_changes
 from codey.storage.managed_outputs import ManagedOutputStore
@@ -12,6 +16,53 @@ from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker
 from codey.workspace.paths import read_text_or_none
 from codey.workspace.task_changes import collect_task_changes
+
+
+def test_undo_checks_owner_and_reverses_only_the_selected_run(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "shared.txt"
+    source.write_text("original", encoding="utf-8")
+    created = project / "new.txt"
+    with closing(AppContext(tmp_path / "state", start_scheduler=False)) as ctx:
+        assert ctx.run_ledgers is not None
+        for run, content in (("one", "first"), ("two", "second")):
+            ctx.durable.admit_input(conversation_id="owner", request_id=run, task_id=run, text=run, provider_snapshot={})
+            ctx.durable.claim_task(run)
+            ctx.durable.start_task(run, state={"project": str(project)})
+            tracker = task_change_tracker(ctx, project, run, source_id="one" if run == "two" else "")
+            tracker.capture_before(source.name)
+            source.write_text(content, encoding="utf-8")
+            tracker.capture_after(source.name)
+            if run == "two":
+                tracker.capture_before(created.name)
+                created.write_text("new", encoding="utf-8")
+                tracker.capture_after(created.name)
+            writer = ctx.run_ledgers.open(run_id=run, session_id="owner", project=project, task=run,
+                                          provider="local", mode="project")
+            record_task_changes(writer, ctx.managed_outputs, collect_task_changes(project, tracker),
+                                checks_passed=True, receipt={})
+            ctx.durable.complete_task(run, "done", state=dict(ctx.durable.task(run).state))
+
+        _, data = run_changes_response(ctx, {"session_id": ["owner"], "run_id": ["two"]})
+        assert data["undo_available"] is True
+        assert undo_run_changes_response(ctx, {"session_id": "other", "run_id": "two"})[0] == 404
+        status, data = undo_run_changes_response(ctx, {"session_id": "owner", "run_id": "one"})
+        assert status == 409 and data["conflicts"] == [source.name]
+        assert source.read_text(encoding="utf-8") == "second"
+
+        scope: dict[str, object] = {"session_id": "owner", "run_id": "two"}
+        assert undo_run_changes_response(ctx, {**scope, "preview": True}) == (
+            200, {"ok": True, "files": [created.name, source.name]},
+        )
+        source.write_text("user edit after preview", encoding="utf-8")
+        assert undo_run_changes_response(ctx, scope)[0] == 409
+        assert created.exists()
+        source.write_text("second", encoding="utf-8")
+        assert undo_run_changes_response(ctx, scope)[0] == 200
+        assert source.read_text(encoding="utf-8") == "first"
+        assert not created.exists()
+        assert undo_run_changes_response(ctx, {**scope, "preview": True}) == (200, {"ok": True, "files": []})
 
 
 def test_historical_task_diff_uses_first_write_and_run_identity(tmp_path: Path) -> None:

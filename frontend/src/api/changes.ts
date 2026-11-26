@@ -31,6 +31,25 @@ export async function fetchRunChanges(sessionId: string, runId: string) {
   return decodeChangesData(await response.json());
 }
 
+export async function undoRunChanges(sessionId: string, runId: string, preview: boolean) {
+  const response = await requestResponse('/api/run_changes/undo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, run_id: runId, preview }),
+  });
+  const data: unknown = await response.json();
+  if (!isRecord(data)) throw new Error('Could not confirm undo');
+  const strings = (value: unknown) =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return {
+    ok: response.ok && data.ok === true,
+    error: typeof data.error === 'string' ? data.error : '',
+    files: strings(data.files),
+    restored: strings(data.restored),
+    conflicts: strings(data.conflicts),
+  };
+}
+
 export async function restoreChanges(project: string) {
   const r = await requestResponse('/api/changes/restore', {
     method: 'POST',

@@ -61,8 +61,7 @@ Message actions sit outside the message surface, in a row below it. User bubble
 fill belongs only to the message body, never to its edit/copy row. Keep the body,
 gap and actions in one continuous hover region so reaching a button does not hide it.
 
-The 2026-10-23 message action revision uses Copy, Edit, then Fork for user
-messages and Copy then Fork for settled assistant answers. Use the approved
+User messages offer Copy and Edit. Settled assistant answers offer Copy and Fork. Use the approved
 copy, pencil and thin branching-arrow vectors.
 Streaming settlement must produce the same Copy / Fork actions as a restored
 answer, updating the mounted node without duplicates. Bind the confirmed durable
@@ -144,7 +143,7 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 - **Monochrome first** — black, gray, white. Hierarchy comes from typography and spacing, not color blocks.
 - **Quiet by default** — idle states show almost nothing. Activity is signaled with motion (spinner) or text, not banners.
 - **No decoration** — no emoji, gradients for status or brand-blue/purple accents. The confirmed user-message surface uses one quiet panel fill; assistant answers remain on the canvas. Actions sit below the surface.
-- **One restrained green family** — the provider availability dot, Research graph nodes and highlighted edges, native text selection, conversation navigation, and added diff lines share a muted green palette. Use role-specific brightness and opacity, not unrelated teal and gray-green accents. Other resting chrome stays monochrome.
+- **One restrained green family** — the provider availability dot, Research graph nodes and highlighted edges, native text selection, conversation navigation, unread completions, and added diff lines share a muted green palette. Use role-specific brightness and opacity, not unrelated teal and gray-green accents. Other resting chrome stays monochrome.
 - **English in the UI** — labels, buttons, placeholders, and system messages use English (`New chat`, `You`, `Codey`, `Allow`, …).
   User messages, model answers, and returned thinking text retain their original language; the English rule applies to fixed application copy.
 
@@ -217,7 +216,7 @@ existing muted/faint roles. Do not globally brighten the palette.
 | Token       | Value     | Use |
 |------------|-----------|-----|
 | `--green-rgb` | `120, 165, 139` | Shared green channels for translucent treatments |
-| `--green` | `rgb(var(--green-rgb))` (`#78a58b`) | Base green; use semantic aliases in components |
+| `--green` | `rgb(var(--green-rgb))` (`#78a58b`) | Base green and unread completion dot in the chat list |
 | `--green-bright` | `#acd1b9` | Brighter green for a navigation preview tick and diff `+` marks |
 | `--green-selection` | `#3b5547` | Dark green for readable selected text |
 | `--ok-dot` | `var(--green)` | **Provider online dot**, Research graph nodes and hovered connections |
@@ -387,6 +386,7 @@ coarse pointers. Project row new-chat actions retain their project scope.
 - **Project row:** name only; full path in `title` tooltip, not inline.
 - **Active project:** 2px left bar in `--text`, not colored background.
 - **Active session:** `--active` background.
+- **Chat status:** pending approval or a pending user answer takes priority over running and unread results. Use a steady dot, spinner, and green dot respectively, with textual accessible status. The menu and status can coexist. Mark a completion seen when the user is following that chat’s latest output.
 - **Secondary actions:** revealed on hover or keyboard focus; visible on devices without hover. `⋯` opens a context menu. Do not show permanent `+` / `×` icon clusters.
 - **Quiet hover copy:** omit native `title` tooltips that repeat `Choose folder` (without a project), `Research`, code/message Copy, `More`, and enabled `Refresh` / `Use in Project`. Icon-only More buttons retain `aria-label="More"`; the project More button uses an empty `title` to suppress its parent row's inherited path tooltip. Keep the full project path on the project name/context, source and truncated-path details, disabled reasons, and the conversation navigation preview. Copy success/failure retains its icon/text feedback and accessible name without a native tooltip; Research retains `aria-pressed`.
 - `New chat`, `Add project`, and magnifier + `Search` share a 34px row height and 1px gaps. Search opens a same-height input in place and filters chat titles and project names locally. The input has a transparent background, no visible border or focus ring, and its text aligns with the Search label. Escape clears and closes search; an empty search also closes on blur. Search temporarily expands matching groups without changing saved project expansion.
@@ -416,14 +416,16 @@ Context menus (`.ctx-menu`):
 ### 5.4 Top bar
 
 - Title breadcrumb: `project-name / chat-title` — project in `--muted`, slash in `--faint`, chat in `--text`.
-- One right sidebar button directly opens or closes the workspace. It opens to the last view for the current conversation, or Files on the first open. The workspace shows only opened content tabs. The plus menu opens Files, Changes, Research, Local context, Review, Output and History. Docked documents share the header with inspection tabs, using DocumentPane as the sole owner of file identity and reading positions. Each tab can be closed independently. Commands and conversation search remain available via `Ctrl+K` and `Ctrl+F` respectively.
+- One right sidebar button directly opens or closes the workspace. It opens to the last view for the current conversation, or Files on the first open. An untouched chat starts with closable Changes, Files and Research tabs when the workspace opens. Remember the tab set and selection per chat. The plus menu reopens these views and opens Local context, Review, Output and History. Docked documents share the header with inspection tabs, using DocumentPane as the sole owner of file identity and reading positions. Each tab can be closed independently. Commands and conversation search remain available via `Ctrl+K` and `Ctrl+F` respectively.
 - The chat title is a plain text button: click, or focus it with Tab and press Enter/Space, to rename in place. Only the chat name is editable; the project crumb and unused topbar space are not rename targets. Hover/focus uses a subtle gray background, without a permanent pencil icon. The topbar editor is transparent and borderless, with no outline, shadow, or native control frame; text stays aligned with the original title. It fits within the topbar and initially selects the full name; the caret and native text selection communicate editing. Sidebar inline rename retains its existing gray input style. Enter saves, Escape cancels, and leaving the editor saves; blank input keeps the original name, and names are limited to 80 characters. Respect IME composition. Commit updates the same session's title, sidebar, search, and durable state together; preserve drafts, message DOM, reading position, and ongoing work. Background rendering preserves the editor and caret, switching chats settles the original session's edit, and stale input events are ignored. Automatic naming must not replace active edits or confirmed custom titles. Remove `Rename chat` from the topbar menu; retain `Rename` in each sidebar chat menu for other chats.
 - **Status area:**
-  - Idle: empty (no dot, no “Connected” label)
-  - Running / connecting: CSS **spinner** + short label (`Running`, `Connecting to Edge…`)
+  - Idle status stays empty. The adjacent changes action is visible for unread task diffs.
+  - Running / connecting: CSS **spinner** and a short label. Running uses tabular elapsed time when a server timestamp is available.
+  - Pending approval or a pending user answer shows a steady dot and its status label.
   - When another chat owns the run: `Running in <chat> · Open`. `Open` returns to the owning chat, where its Stop control remains available; other chats keep the composer Send slot available for queueing.
   - Error: small dot + `--err-text` label (`Disconnected`)
 - No colored status chips in the top bar.
+- The sidebars use paired panel icons. Their tooltip names the action and the active shortcut. The desktop bindings are `Ctrl+B` and `Ctrl+J`; browser bindings add `Alt`.
 
 ### 5.5 Chat stream — de-bubbled messages
 
@@ -460,7 +462,7 @@ process and answer content does not require a repeated uppercase label per fragm
 Assistant reply remains fully visible here.
 ```
 
-Running copy is `Working · <current action>` or `Working · Waiting for reply`; terminal copy reflects the actual result (`Worked`, `Failed`, `Stopped`, `Paused`, `Waiting for approval`). Count completed, successful actions only, and changed files only for edits. Completed groups default to closed; explicit user disclosure choices survive updates. Step numbers are available inside the disclosure. Legacy records without run identifiers may retain their original Turn dividers.
+Running copy is `Working · <current action>` or `Working · Waiting for reply`; terminal copy reflects the actual result (`Worked`, `Failed`, `Stopped`, `Paused`, `Waiting for approval`). Count completed, successful actions only, and changed files only for edits. Running groups default to open and completed groups to closed. Explicit disclosure choices survive updates. Step numbers are available inside the disclosure. Legacy records without run identifiers may retain their original Turn dividers.
 
 `Thinking` appears only for nonempty reasoning text returned separately by the model. It defaults to closed, retains its source language, and has a Copy action. Never infer thinking from wait time, parse it out of answer text, or scrape model websites to manufacture this section. The same rendering applies to every connection.
 
@@ -709,22 +711,20 @@ behavior is implemented in the saved interaction prototype; production integrati
 remains part of the UI completion work.
 
 ```
-Choose folder · Research                     ← enabled context actions (11.5px, --text-dim)
-┌─────────────────────────────────────────┐
-│ Send a message to Codey…                │
-│                                         │
-│ ● Gemma4 12B ⌄ Low ⌄       Enter  ↗   │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ Send a message to Codey…                                            │
+│                                                                     │
+│ Choose folder   Research           ● Gemma4 12B ⌄ Low ⌄   Enter ↗   │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 - Composer wrapper: separate from chat with spacing, without a full-width top divider. Keep the topbar's existing subtle bottom divider.
 - Box: `--bg-2`, 1px `--border`, radius 10px; keep the same quiet border while typing. Text input and the bottom model/action row share this frame so their task scope reads as one control.
-- **Context row:** `Choose folder` and `Research` stay on the left of the quiet line above the input. Local-save failure/progress occupies the right side of that same line, on the same text baseline; it never adds a row or moves/resizes the input frame. Enabled actions use `--text-dim`; the separator stays `--faint`. Disabled inactive actions retain `--muted` and 0.55 opacity; active Research retains `--text`, including when disabled at 0.55 opacity. Long folder names truncate while retaining their complete accessible name; Research and save Retry remain visible. The main grid has one shrinkable content column; at viewport ≤ 720px, the overlay sidebar leaves a single full-width body column.
-- **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text only. No border, background, chip, underline, font-weight change, or accent color.
+- **Context controls:** Choose folder and Research sit inside the composer bar and have shared icons. Research uses a pressed state and a quiet active fill. Folder and model names truncate with complete accessible names. At narrow widths show context icons and keep access to save Retry, thinking effort, and Send / Stop. The existing save notice may wrap within the composer on small viewports.
 - **Provider picker:** borderless; status dot + label + chevron. This is the only visible provider/model selector in the composer. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
 - **Send / Stop:** one mutually exclusive action in a fixed 34px square position. A nonempty draft shows Send; an empty composer shows Stop while this chat is running or awaiting admission, otherwise disabled Send. Never show both actions. Use the existing 16px icons and transparent `.icon-btn` styling; enabled Send uses `--text` and the original paper-plane outline. Stop stops the selected chat's task. No filled accent send button.
 - **Model menu:** directly show the short catalog without a search input. Opening focuses the current model. Arrow keys navigate, Enter selects, Escape closes and returns focus. Do not invent unsupported model/effort controls. Menus have a viewport-bounded scroll area.
-- API connections show their actual model names; Local can supply an optional display name and the complete model ID in Settings. The menu contains only models explicitly selected in Settings from enabled sources; never invent a website's selected model version. Optional integrations contribute source and catalog data to the same controls, without vendor-specific UI branches, accents, cards or Settings panels. Discovery never selects a new model. Catalog availability does not promise successful generation. The model menu contains only models; connection configuration belongs in Settings.
+- API connections show their actual model names; Local can supply an optional display name and the complete model ID in Settings. The menu contains only models explicitly selected in Settings from enabled sources; never invent a website's selected model version. Optional integrations contribute source and catalog data to the same controls, without vendor-specific UI branches, accents, cards or Settings panels. Discovery never selects a new model. Catalog availability does not promise successful generation. Group available model options by source. The separate Manage models action opens the Models section of Settings, which also owns connection configuration.
 - A separate borderless effort selector sits beside the model name: `Gemma4 12B ⌄ Low ⌄`. The selector disappears for unsupported connections and website models. Accessible copy names `Thinking effort`; visible labels are `Off / Mini / Low / Med / High / XHigh / Max`, filtered by verified capabilities. The two borderless selectors sit 2px apart, without a separator. The model menu uses a stable 240px width independent of the selected name or effort label, shrinking to the available viewport width. Selected checks retain right-side padding. The effort menu uses a 160px width. Both menus are bounded by the viewport. Long model labels use ellipsis and retain their complete accessible name. Model and effort triggers and menu rows have no native hover tooltips. Each selector has its own menu, keyboard focus, and dismissal. Opening one closes the other.
 - The enabled effort trigger uses `--text-dim`, becoming `--text` on hover or while its menu is open; disabled effort retains `--muted` and 0.55 opacity. A provider probe explanation uses 11.5px `--text-dim` in the existing model menu.
 - Thinking controls require verified connection/model metadata. Active KoboldCpp Jinja and a matching `enable_thinking` template support Off/High; verified versions 1.112.2–1.117.x additionally support minimal/low/medium budgets. High uses the native unrestricted thinking budget within the total output limit. Mini/Med map to minimal/medium. Show the concrete initial level rather than Default or On. Every non-Off choice explicitly enables thinking; do not fabricate distinct Max behavior. Returned reasoning and configurable thinking are independent capabilities.
@@ -733,16 +733,20 @@ Choose folder · Research                     ← enabled context actions (11.5p
 - `Enter` hint: immediately before Send/Stop with a 6px gap, visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
 - **Drafts and submission:** exact text, UTF-16 caret/selection offsets and direction belong to `session.draft`, persisted with the existing local UI state across chat switches and restarts. Question answers use `QuestionDraftStore` in the same browser origin and validate question revision/options before restore; `Clear draft` only removes that question's draft. A different tab exposes a conflict with `Keep current` / `Use other draft`. Cross-port and cross-profile recovery is not promised. Drafts do not enter model context or chat excerpts until explicitly sent.
 - A draft revision advances only on text changes and never rewinds when cleared. Admission shows `Sending…`, prevents duplicate requests, and only consumes the accepted text/revision snapshot; later edits, including editing back to the same text, remain intact. Choosing a folder changes context without sending. Save failure preserves editing and shows one quiet `Not saved · Retry` in the context row's right-hand status slot; assistive text explains `Could not save local changes`, since the save scope also includes chats and projects. Retry saves current local content without reloading it or sending a task. Only an already-visible failure changes to `Saving…`; Retry remains in place with `aria-disabled` and ignores repeat activation while saving. Normal background saves stay silent. Hide the status only after successful confirmation with no queued or coalesced edits waiting to save. Return focus to the input only if the disappearing status still owns focus; background responses never take focus from another control. A version conflict pauses automatic writes, including the exit beacon, until explicit Retry; the local cache still retains the draft. No extra row, toast, underline, separate draft API, store or save timer.
-- **Pending approval:** the command card owns `Approval required` and its Allow / Deny controls. Do not duplicate this with a composer notification or another approval action. Enter never approves a command globally. The command card remains the single approval surface.
+- **Pending approval:** show a composer-area jump button when the current pending card is outside the transcript viewport. Activating it scrolls and focuses the card. Keep all permission decisions on the card. Enter sends messages from the composer.
 
 Provider is **session-level** — it lives in the bottom provider picker, not duplicated in the context row or elsewhere.
 
-Research is also **session-level**. It lives in the composer context row, never beside the model picker as a separate primary action. User-facing copy says `Research`; internal words like vault, knowledge, artifact, and index should not appear in the main chrome.
+Research is also **session-level**. Its toggle lives on the context side of the composer bar. User-facing copy says `Research`; internal words like vault, knowledge, artifact, and index should not appear in the main chrome.
 
 ### 5.7 Changes inspection
 
 Redesign target: use a Changes tab in the shared right workspace. Preserve the
-existing factual diff and restore behavior below while replacing drawer-specific chrome.
+existing factual project diff and restore behavior.
+
+- A task receipt links to the recorded task diff and shows verified file and line counts. Opening that diff clears its unread changes cue. Keep the receipt available in history.
+- A task with a retained per-run baseline can offer Undo. Preview the affected paths and confirm in place. Validate ownership and file versions again while holding the project writer lease. Report conflicts and partial writes with paths. Project Restore keeps its own scope.
+- Use a full-screen workspace at widths of 720px and below, with a Back to conversation control.
 
 - Fixed right panel, `--bg-2`, slides in from the right.
 - Header actions: text buttons, no borders (`drawer-btn`).
@@ -982,7 +986,7 @@ without stealing focus. Saving an older draft cannot acknowledge newer typing.
 See [UI state and restored task history](docs/ui-state-and-history.md) for ownership,
 conflict reconciliation and cache migration boundaries.
 
-Use `Connecting` and `Running` without trailing ellipses in the top status.
+Use `Connecting` and `Running` without trailing ellipses in the top status. Use tabular elapsed time when the active run has a server start time.
 Model and effort choices stay available during Sending and Running. They belong
 to the next submission; each submitted or queued request captures its own choices
 before an asynchronous boundary and cannot be changed by later composer edits.
