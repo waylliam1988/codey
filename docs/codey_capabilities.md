@@ -46,7 +46,7 @@ See [implementation, setup and limits](external-control-implementation.zh-CN.md)
 
 - `New Chat` uses the shared workspace kernel for answers, scripts and local
   command requests. Its root is `<state_home>/workspaces/<session_key>`;
-  the default state home is `~/.codey`.
+  the default state home is `.codey` under the Codey application directory.
 - `Choose folder` supplies the file-tool root and project context to the same kernel.
 - `Research` adds strict evidence, ledger and report requirements to the request.
 - Normal answers and tool calls use one loop and completion gate. Ordinary

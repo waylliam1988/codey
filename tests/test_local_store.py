@@ -10,9 +10,30 @@ from codey.automation import browser
 from codey.providers import controls as provider_controls
 from codey.storage import local_store
 from codey.storage.ui_state_store import UiStateStore
+from codey.workspace import paths
 
 
 class LocalStoreTests(unittest.TestCase):
+    def test_state_stays_with_the_application_and_its_published_release(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve() / "Moved Codey"
+            state = root / ".codey"
+            relative_module = Path("codey/storage/local_store.py")
+            self.assertEqual(local_store._application_state_home(root / relative_module), state)
+            release = state / "releases" / "release_a" / "source"
+            self.assertEqual(local_store._application_state_home(release / relative_module), state)
+
+    def test_workspace_paths_keep_portable_runtime_data_out_of_the_project_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            state = root / ".codey"
+            managed = state / "workspaces" / "session"
+            with mock.patch.object(paths, "DEFAULT_STATE_HOME", state):
+                with self.assertRaisesRegex(ValueError, "runtime data"):
+                    paths.safe_join(root, ".codey/control-credentials.json")
+                self.assertEqual(paths.safe_join(root, ".codey/config.json"), state / "config.json")
+                self.assertEqual(paths.safe_join(managed, "result.txt"), managed / "result.txt")
+
     def test_runtime_paths_share_one_state_home(self) -> None:
         self.assertEqual(browser.DEFAULT_PROFILE, local_store.DEFAULT_STATE_HOME / "edge-profile")
         self.assertEqual(browser.CDP_STATE_FILE, local_store.DEFAULT_STATE_HOME / "cdp-port.json")

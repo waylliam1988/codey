@@ -42,10 +42,12 @@ pip install -e .
 python -m codey
 ```
 
+运行数据默认保存在 Codey 目录下的 `.codey`。每份 Codey 有自己的数据目录。
+
 Codey 会打开本地 UI：`http://127.0.0.1:<port>/`。模型网站只在发送时按需打开，
 启动或选择模型不会自动打开网站。第一次打开某个网页 provider 时，
 在专用浏览器窗口里手动登录一次。直接在 `New Chat` 描述需求即可：普通问题直接回答，
-写脚本等任务使用 `~/.codey/workspaces/<session_key>`，本机 Shell 命令仍需审批。
+写脚本等任务使用 `.codey/workspaces/<session_key>`，本机 Shell 命令仍需审批。
 选择项目文件夹后，同一套工具使用该目录和上下文，不需要切换聊天模式。
 
 通过拖放文件或粘贴图片添加附件，支持 UTF-8 文本／源码及

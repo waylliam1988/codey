@@ -51,11 +51,14 @@ Start Codey:
 python -m codey
 ```
 
+Codey stores local state in `.codey` under its application directory. Each
+application copy has its own state directory.
+
 Codey opens a local UI at `http://127.0.0.1:<port>/`. Model websites open only
 when you send to them; startup and model selection do not launch them. When a
 provider browser opens, log in once with the web AI account you already use. Choose a
 project folder and ask for a change, or stay in `New Chat` to talk or work in
-a managed session workspace under `~/.codey/workspaces/<session_key>`. Chat
+a managed session workspace under `.codey/workspaces/<session_key>`. Chat
 can write scripts and request local commands without choosing a folder.
 Both use the same tools; Shell commands still require approval.
 

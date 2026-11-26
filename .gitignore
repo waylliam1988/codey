@@ -9,6 +9,9 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# Portable runtime databases, profiles and credentials live beside the project config.
+/.codey/*
+!/.codey/config.json
 .e2e-artifacts/
 # Local scratch files from ad-hoc checks and aborted tool runs; never commit.
 /.tmp-*

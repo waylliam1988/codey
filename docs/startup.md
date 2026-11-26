@@ -77,7 +77,7 @@ rollback behavior.
 
 ## Timing
 
-`~/.codey/startup-timings.jsonl` contains bounded diagnostic observations grouped
+`.codey/startup-timings.jsonl` in the Codey application directory contains bounded diagnostic observations grouped
 by startup ID and process ID. Durations use a monotonic clock. Log failure cannot
 fail startup. Rotation keeps the current log and one previous log, each about 1 MB.
 These logs contain stage names and timings, never launch URLs or credentials.

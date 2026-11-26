@@ -12,7 +12,17 @@ from codey.storage.atomic_io import MAX_ATOMIC_JSON_BYTES
 from codey.storage.atomic_io import write_json_atomic as write_json_atomic
 from codey.utils.object_fields import object_fields
 
-DEFAULT_STATE_HOME = Path.home() / ".codey"
+
+def _application_state_home(module_file: Path) -> Path:
+    root = module_file.resolve().parents[2]
+    release = root.parent
+    if root.name == "source" and release.name.startswith("release_") and release.parent.name == "releases":
+        # The launcher stores immutable copies under <state>/releases/<id>/source.
+        return release.parent.parent
+    return root / ".codey"
+
+
+DEFAULT_STATE_HOME = _application_state_home(Path(__file__))
 MAX_JSON_BYTES = MAX_ATOMIC_JSON_BYTES
 
 

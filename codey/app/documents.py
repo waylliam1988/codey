@@ -13,6 +13,7 @@ from codey.types.json_value import JsonObject
 from codey.utils.object_fields import object_fields, sequence_items
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.config import load_project_config, path_matches_ignored_prefix
+from codey.workspace.paths import safe_join
 from codey.workspace.session import session_workspace
 
 if TYPE_CHECKING:
@@ -74,7 +75,7 @@ def document_response(ctx: _DocumentContext, body: Mapping[str, object]) -> tupl
         # No network shares, device paths or NTFS alternate streams.
         if raw.startswith("//") or ":" in (raw[2:] if len(raw) > 1 and raw[1] == ":" else raw):
             raise ValueError("invalid path")
-        path = (root / raw).resolve()
+        path = safe_join(root, raw)
         relative = path.relative_to(root).as_posix()
         if not path.is_file() and not Path(raw).is_absolute():
             matches, incomplete = _reference_candidates(root, relative)

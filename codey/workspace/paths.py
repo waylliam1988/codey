@@ -10,6 +10,8 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Protocol, Self, TypeVar
 
+from codey.storage.local_store import DEFAULT_STATE_HOME
+
 
 class _SortKey(Protocol):
     def __lt__(self, other: Self, /) -> bool: ...
@@ -54,6 +56,9 @@ def safe_join(root: str | Path, rel: str, *, label: str = "project root") -> Pat
     path = (resolved_root / rel).resolve()
     if path != resolved_root and resolved_root not in path.parents:
         raise ValueError(f"path escapes {label}: {rel}")
+    if (path.is_relative_to(DEFAULT_STATE_HOME) and path != DEFAULT_STATE_HOME / "config.json"
+            and not resolved_root.is_relative_to(DEFAULT_STATE_HOME / "workspaces")):
+        raise ValueError(f"path is in Codey's runtime data: {rel}")
     return path
 
 

@@ -34,7 +34,7 @@
 ## 工作模式
 
 - `New Chat` 共用工作区内核，可以直接回答、读写脚本和请求本机命令。未选目录时
-  使用 `<state_home>/workspaces/<session_key>`，默认 state home 是 `~/.codey`。
+  使用 `<state_home>/workspaces/<session_key>`，默认数据目录是 Codey 目录下的 `.codey`。
 - `Choose folder` 提供文件工具的根目录和项目上下文；同一套执行内核继续工作。
 - `Research` 为当前请求加入严格证据、账本和报告要求。
 - 正常文字回答与工具调用经过同一循环和完成门；普通问候只需一次生成请求。
