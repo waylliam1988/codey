@@ -286,10 +286,7 @@ function tool(block: ProcessBlock, m: ToolRecord): void {
     run: 'terminal',
   };
   const icon = icons[kind || ''];
-  if (icon) {
-    const marker = createIconSvg(icon, 'process-step-icon');
-    (node.querySelector('.tool-row,.tool-summary,summary') ?? node).prepend(marker);
-  }
+  if (icon) node.querySelector('.tl-dot')?.replaceChildren(createIconSvg(icon, 'process-step-icon'));
   if (existing) node.dataset.foldsegment = existing.dataset.foldsegment || '';
   if (children) node.append(children);
   const nextDisclosure = node.querySelector<HTMLDetailsElement>(':scope > .tool-disclosure');
