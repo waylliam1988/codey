@@ -7,6 +7,7 @@ from codey.research.search_contracts import SearchOutcome, complete_search, fail
 from codey.research.search_profiles import SearchProfile
 from codey.research.search_provenance import SearchAttempt, query_consistency
 from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
+from codey.utils.refs import normalize_text
 
 OBSERVE_SEARCH = r"""({profile, excluded}) => {
     const visible = el => !!el && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0
@@ -49,9 +50,12 @@ class SearchObservation:
         if isinstance(status, int) and status >= 400:
             return failed_search(query, profile.name, "search_page_unavailable", str(status), final_url=self.url)
         consistent = query_consistency(self.url, query)
+        observed_query = value["query"]
+        input_matches = (observed_query is not None and
+            normalize_text(require_json_string(observed_query, "observed query")) == normalize_text(query))
         if consistent is None and submitted_document is not None and self.document != submitted_document:
-            consistent = value["query"] == query
-        if consistent is True and value["query"] is not None and value["query"] != query:
+            consistent = input_matches
+        if consistent is True and observed_query is not None and not input_matches:
             return failed_search(query, profile.name, "search_query_mismatch", final_url=self.url)
         # The filled homepage is not a completed query, even if it contains old results.
         if consistent is not True:

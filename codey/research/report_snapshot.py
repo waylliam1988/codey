@@ -47,7 +47,11 @@ class ReportRecord(Mapping[str, object]):
         if isinstance(other, ReportRecord):
             return self._values == other._values
         if isinstance(other, Mapping):
-            return self.to_payload() == canonical_json_object(other)
+            try:
+                other_payload = canonical_json_object(other)
+            except (TypeError, ValueError):
+                return False
+            return self.to_payload() == other_payload
         return NotImplemented
 
     def to_payload(self) -> JsonObject:

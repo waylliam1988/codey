@@ -44,7 +44,7 @@ def test_profile_cleanup_finishes_after_chromium_shutdown_races(tmp_path: Path,
 
     runtime = BrowserRuntime(BrowserConfig())
     runtime._profile = profile
-    monkeypatch.setattr("codey.automation.browser_runtime.shutil.rmtree", racing_remove)
+    monkeypatch.setattr("codey.automation.browser_cleanup.shutil.rmtree", racing_remove)
     asyncio.run(runtime.close())
     assert attempts == 2 and not profile.exists()
 

@@ -4,12 +4,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
-import errno
 import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import time
@@ -36,6 +34,7 @@ from playwright.async_api import (
 
 from codey.automation.browser import CONTROLLED_BROWSER_FLAGS
 from codey.automation.browser_binding import BrowserBinding, PageBinding, browser_endpoint, browser_identity
+from codey.automation.browser_cleanup import remove_profile, stop_process
 from codey.automation.browser_contracts import (
     BrowserAction,
     BrowserCommand,
@@ -1281,43 +1280,27 @@ class BrowserRuntime:
         if release and self._browser is None and self._resume_binding is not None:
             with contextlib.suppress(Error, OSError, RuntimeError, ValueError):
                 await self._connect()
-        if self._browser is not None:
-            await self._network.close()
-            await self._register_popups()
-            for target, inputs in self._input_states.items():
-                if inputs.keys and target in self._pages:
-                    with contextlib.suppress(Error, TimeoutError):
-                        await inputs.release(self._pages[target].page)
-            for state in tuple(self._pages.values()):
-                if release and state.binding.owned and not state.page.is_closed():
-                    with contextlib.suppress(Error):
-                        await state.page.close(run_before_unload=False)
-            if release and self._owns_browser:
-                with contextlib.suppress(Error):
-                    cdp = await self._browser.new_browser_cdp_session()
-                    await _send(cdp, "Browser.close")
-            await self._browser.close()
-        if self._playwright is not None:
-            await self._playwright.stop()
-        if release and self._process is not None and self._process.poll() is None:
-            try:
-                await asyncio.to_thread(self._process.wait, timeout=3)
-            except subprocess.TimeoutExpired:
-                self._process.terminate()
-                await asyncio.to_thread(self._process.wait, timeout=2)
-        if release and self._profile is not None:
-            deadline = time.monotonic() + 3
-            while self._profile.exists():
+        async with contextlib.AsyncExitStack() as cleanup:
+            if release:
+                cleanup.push_async_callback(remove_profile, self._profile)
+                cleanup.push_async_callback(stop_process, self._process)
+            if self._playwright is not None:
+                cleanup.push_async_callback(self._playwright.stop)
+            if self._browser is not None:
+                cleanup.push_async_callback(self._browser.close)
                 try:
-                    await asyncio.to_thread(shutil.rmtree, self._profile)
-                except FileNotFoundError:
-                    # Chromium may remove its own lockfiles during recursive
-                    # cleanup. Retry the remaining tree on Python 3.11/3.12.
-                    if time.monotonic() >= deadline and self._profile.exists():
-                        raise
-                except OSError as exc:
-                    # Browser.close acknowledges shutdown before Chromium's
-                    # cache processes release handles and finish their writes.
-                    if (not isinstance(exc, PermissionError) and exc.errno != errno.ENOTEMPTY) or time.monotonic() >= deadline:
-                        raise
-                    await asyncio.sleep(0.1)
+                    await self._network.close()
+                finally:
+                    await self._register_popups()
+                    for target, inputs in self._input_states.items():
+                        if inputs.keys and target in self._pages:
+                            with contextlib.suppress(Error, TimeoutError):
+                                await inputs.release(self._pages[target].page)
+                    for state in tuple(self._pages.values()):
+                        if release and state.binding.owned and not state.page.is_closed():
+                            with contextlib.suppress(Error):
+                                await state.page.close(run_before_unload=False)
+                    if release and self._owns_browser:
+                        with contextlib.suppress(Error):
+                            cdp = await self._browser.new_browser_cdp_session()
+                            await _send(cdp, "Browser.close")

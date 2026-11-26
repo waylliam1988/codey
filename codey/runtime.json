@@ -113,6 +113,7 @@
     "codey/automation/__init__.py",
     "codey/automation/browser.py",
     "codey/automation/browser_binding.py",
+    "codey/automation/browser_cleanup.py",
     "codey/automation/browser_contracts.py",
     "codey/automation/browser_detail.py",
     "codey/automation/browser_disclosure.py",

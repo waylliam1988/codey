@@ -223,16 +223,6 @@ def check_fetch_url(url: str, *, resolve: bool = True, use_cache: bool = False) 
     return DEFAULT_NETWORK_POLICY.check_url(url, resolve=resolve, use_cache=use_cache)
 
 
-__all__ = [
-    "DEFAULT_NETWORK_POLICY",
-    "NetworkDecision",
-    "NetworkPolicy",
-    "NetworkStatus",
-    "check_fetch_url",
-    "is_valid_hostname",
-]
-
-
 def check_browser_url(url: str, resource_type: str, navigation: bool) -> str | None:
     """Inline subresources have no network endpoint; documents keep the URL policy."""
     try:
@@ -242,3 +232,14 @@ def check_browser_url(url: str, resource_type: str, navigation: bool) -> str | N
     if scheme in {"data", "blob"} and resource_type != "document" and not navigation:
         return None
     return check_fetch_url(url, use_cache=True)
+
+
+__all__ = [
+    "DEFAULT_NETWORK_POLICY",
+    "NetworkDecision",
+    "NetworkPolicy",
+    "NetworkStatus",
+    "check_fetch_url",
+    "check_browser_url",
+    "is_valid_hostname",
+]

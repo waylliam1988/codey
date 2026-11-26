@@ -8,6 +8,7 @@ from typing import Protocol, runtime_checkable
 from urllib.parse import parse_qs, urlsplit
 
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer, require_json_string
+from codey.utils.refs import normalize_text
 
 _SITE = re.compile(r'(?<!\S)site:([^\s"\'()]+)', re.IGNORECASE)
 EXCLUDED_SEARCH_REGIONS = (
@@ -80,8 +81,10 @@ def filter_site_results(query: str, rows: Sequence[JsonObject]) -> tuple[list[Js
 
 
 def query_consistency(final_url: str, query: str) -> bool | None:
-    values = parse_qs(urlsplit(final_url).query).get("q")
-    return values == [query] if values is not None else None
+    values = parse_qs(urlsplit(final_url).query, keep_blank_values=True).get("q")
+    if values is None:
+        return None
+    return len(values) == 1 and normalize_text(values[0]) == normalize_text(query)
 
 
 def decode_search_attempt(value: object) -> SearchAttempt:

@@ -5,6 +5,7 @@ import asyncio
 import base64
 import contextlib
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlsplit
 
 from playwright.async_api import BrowserContext, Error, Page, Request, Response, Route
 
@@ -23,14 +24,25 @@ class BrowserNetwork:
         self._guarded_contexts: set[BrowserContext] = set()
         self._targets: dict[Page, str] = {}
         self._detach: list[Callable[[], None]] = []
-        self._active_routes = 0
-        self._idle = asyncio.Event()
-        self._idle.set()
+        self._route_tasks: set[asyncio.Task[None]] = set()
+        self._closing = False
 
     async def _route(self, route: Route) -> None:
-        self._active_routes += 1
-        self._idle.clear()
+        task = asyncio.create_task(self._run_route(route))
+        self._route_tasks.add(task)
         try:
+            await task
+        except asyncio.CancelledError:
+            if not self._closing:
+                raise
+        finally:
+            self._route_tasks.discard(task)
+
+    async def _run_route(self, route: Route) -> None:
+        try:
+            if self._closing:
+                await route.abort()
+                return
             # A page's resource burst is unrelated to the tool-command limit.
             # Apply backpressure instead of dropping stylesheets and scripts.
             async with asyncio.timeout(10):
@@ -38,11 +50,15 @@ class BrowserNetwork:
                     await self._route_request(route)
         except TimeoutError:
             self._request_event(route.request, "blocked", "route_decision_timeout")
-            await route.abort()
-        finally:
-            self._active_routes -= 1
-            if self._active_routes == 0:
-                self._idle.set()
+            with contextlib.suppress(Error):
+                await route.abort()
+        except asyncio.CancelledError:
+            with contextlib.suppress(Error):
+                await route.abort()
+            raise
+        except Error as exc:
+            if not self._closing:
+                self._request_event(route.request, "request_failed", exc.message)
 
     async def _route_request(self, route: Route) -> None:
         request = route.request
@@ -76,8 +92,6 @@ class BrowserNetwork:
             return
         for watched, target in self._targets.items():
             if watched is page:
-                from urllib.parse import urlsplit
-
                 parsed = urlsplit(request.url)
                 self._event(target, {"kind": kind, "host": parsed.hostname or "", "path": parsed.path[:200],
                     "resource_type": request.resource_type, "navigation": request.is_navigation_request(),
@@ -94,18 +108,23 @@ class BrowserNetwork:
             self._guarded_contexts.add(context)
 
     def watch(self, page: Page, target: str) -> None:
+        if self._closing:
+            return
         self._targets[page] = target
         def request_started(request: Request) -> None:
             if request.is_navigation_request() and request.frame is page.main_frame:
                 self._responses.pop(target, None)
 
-        async def response_received(response: Response) -> None:
-            request = response.request
-            if request.is_navigation_request() and request.frame is page.main_frame:
-                self._responses[target] = {"url": response.url, "http_status": response.status,
-                    "content_type": (await response.all_headers()).get("content-type", "")}
-            elif response.status >= 400 and request.resource_type in {"script", "xhr", "fetch"}:
-                self._request_event(request, "request_failed", "HTTP " + str(response.status))
+        def response_received(response: Response) -> None:
+            try:
+                request = response.request
+                if request.is_navigation_request() and request.frame is page.main_frame:
+                    self._responses[target] = {"url": response.url, "http_status": response.status,
+                        "content_type": response.headers.get("content-type", "")}
+                elif response.status >= 400 and request.resource_type in {"script", "xhr", "fetch"}:
+                    self._request_event(request, "request_failed", "HTTP " + str(response.status))
+            except Error:
+                return
 
         def request_failed(request: Request) -> None:
             self._request_event(request, "request_failed", request.failure or "request failed")
@@ -138,12 +157,26 @@ class BrowserNetwork:
         return {key: value for key, value in response.items() if key != "url"} if response.get("url") == url else {}
 
     async def close(self) -> None:
-        for context in tuple(self._guarded_contexts):
-            with contextlib.suppress(Error):
-                await context.unroute("**/*", self._route)
-        self._guarded_contexts.clear()
-        await asyncio.wait_for(self._idle.wait(), timeout=2)
-        for detach in self._detach:
-            detach()
-        self._detach.clear()
-        self._targets.clear()
+        self._closing = True
+        try:
+            for detach in self._detach:
+                with contextlib.suppress(Error):
+                    detach()
+            for context in tuple(self._guarded_contexts):
+                with contextlib.suppress(Error):
+                    await context.unroute("**/*", self._route)
+            if self._route_tasks:
+                await asyncio.wait(tuple(self._route_tasks), timeout=2)
+        finally:
+            tasks = tuple(self._route_tasks)
+            for task in tasks:
+                task.cancel()
+            try:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                self._route_tasks.clear()
+                self._detach.clear()
+                self._guarded_contexts.clear()
+                self._targets.clear()
+                self._responses.clear()
+                self._diagnostics.clear()
