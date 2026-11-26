@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Protocol
 from unittest.mock import patch
 
+from codey.research.search_contracts import SearchOutcome
+from tests.support.search_fixture import search_outcome
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -42,8 +45,8 @@ class Source:
     def __init__(self) -> None:
         self.calls = 0
 
-    def search(self, _query: str, *, limit: int) -> list[dict[str, object]]:
-        return []
+    def search(self, _query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(_query, [], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.calls += 1

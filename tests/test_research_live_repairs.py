@@ -1,5 +1,6 @@
 """Regressions captured during real local-model browser research."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -8,35 +9,19 @@ import pytest
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.model import KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
-from codey.research import browser_search, extract, source_download
+from codey.research import extract, source_download
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.tools import ResearchTools
+from codey.types.json_value import JsonObject, JsonValue
 
 URL = "https://example.com/article"
 
 
-def test_browser_close_detaches_inflight_routes_before_context_close():
-    provider = browser_search.BrowserSearchProvider()
-    calls = []
-
-    class Page:
-        def unroute_all(self, *, behavior):
-            calls.append(("routes", behavior))
-
-    provider._fetch_page = provider._search_page = Page()
-    provider._owned_pages[id(provider._fetch_page)] = provider._fetch_page
-    provider._session = SimpleNamespace(process=None, owns_browser=True, owns_context=True,
-                                        close=lambda: calls.append(("context", "close")))
-    provider._close_on_browser_thread()
-    assert calls == [("routes", "wait"), ("context", "close")]
-    assert provider._fetch_page is provider._search_page is provider._session is None
-    provider._close_on_browser_thread()
-    assert len(calls) == 2
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_chinese_challenge_is_not_acquired_as_citable_evidence():
+def test_chinese_challenge_is_not_acquired_as_citable_evidence() -> None:
     response = mock.MagicMock(status=200, headers={"content-type": "text/html; charset=utf-8"})
     response.__enter__.return_value = response
     response.url = URL
@@ -52,12 +37,12 @@ def test_chinese_challenge_is_not_acquired_as_citable_evidence():
     assert not ledger.opened_sources and not ledger.final_url_set()
 
 
-def test_long_article_about_browser_verification_is_still_usable():
+def test_long_article_about_browser_verification_is_still_usable() -> None:
     text = "研究浏览器人机验证的可用性与误判。" + "实验方法、对照和观测结果。" * 180
     assert extract._usable_fetch_page_text(text)
 
 
-def test_missing_sources_feedback_repairs_omission_without_reopening_or_relabelling(tmp_path):
+def test_missing_sources_feedback_repairs_omission_without_reopening_or_relabelling(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(root=store.root))
@@ -78,7 +63,7 @@ def test_missing_sources_feedback_repairs_omission_without_reopening_or_relabell
 
 
 @pytest.mark.parametrize("evidence", [None, []])
-def test_omitted_evidence_does_not_promote_page_navigation_to_support(tmp_path, evidence):
+def test_omitted_evidence_does_not_promote_page_navigation_to_support(tmp_path: Path, evidence: JsonValue) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(root=store.root))
@@ -104,13 +89,13 @@ def test_omitted_evidence_does_not_promote_page_navigation_to_support(tmp_path, 
     ({"mode": {"state": "reported", "value": 5}}, "conditions.mode"),
     ({"mode": {"state": "not_extracted", "name": "workload"}}, "conditions.mode"),
 ])
-def test_condition_errors_identify_path_and_show_nested_repair(conditions, path):
+def test_condition_errors_identify_path_and_show_nested_repair(conditions: JsonObject, path: str) -> None:
     with pytest.raises(ValueError) as caught:
         KnowledgeObject("claim-one", "claim", "A conditional claim", "source", conditions=conditions)
     assert path in str(caught.value) and '"workload":{"state":"not_extracted"}' in str(caught.value)
 
 
-def test_verified_normalized_quote_keeps_original_source_offsets():
+def test_verified_normalized_quote_keeps_original_source_offsets() -> None:
     from codey.research.object_model import _excerpt_offsets, build_research_record
 
     text = "Document header.\nOnly one\n  writer may commit at a time.\nReferences."
@@ -129,7 +114,7 @@ def test_verified_normalized_quote_keeps_original_source_offsets():
 
 
 @pytest.mark.parametrize("case", ["valid", "unopened", "invented_quote", "explicit_empty_sources"])
-def test_new_note_can_catalogue_explicit_evidence_urls_without_weakening_checks(tmp_path, case):
+def test_new_note_can_catalogue_explicit_evidence_urls_without_weakening_checks(tmp_path: Path, case: str) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(root=store.root))
@@ -154,3 +139,15 @@ def test_new_note_can_catalogue_explicit_evidence_urls_without_weakening_checks(
             assert store.index.count() == 0
     finally:
         store.close()
+
+
+def test_independent_provider_closes_its_actual_task_worker_idempotently() -> None:
+    from codey.research.browser_search import BrowserSearchProvider
+    from tests.support.real_cdp import chromium_executable
+    provider = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
+    assert provider.browser.navigate("about:blank").ok
+    process = provider.browser._process._process
+    assert process is not None and process.poll() is None
+    provider.close()
+    assert process.poll() is not None
+    provider.close()

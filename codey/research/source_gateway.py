@@ -35,7 +35,7 @@ from codey.research.pdf_extract import (
     PdfSkipped,
     extract_pdf_document,
 )
-from codey.research.search_provenance import SearchAttempt, filter_site_results, provider_search_attempts
+from codey.research.search_contracts import SearchOutcome, SearchState, failed_search
 from codey.research.source_acquisition import acquisition_observation, combine_acquisitions, with_attempt
 from codey.research.source_connectors import is_valid_arxiv_id
 from codey.research.source_document import PublicationMetadata, SourceDocument, SourceReadScope
@@ -108,7 +108,7 @@ def _identified_full_text(candidate: FullTextCandidate, fetched: dict[str, objec
 
 @runtime_checkable
 class _SearchProvider(Protocol):
-    def search(self, query: str, *, limit: int) -> list[JsonObject]: ...
+    def search(self, query: str, *, limit: int) -> SearchOutcome: ...
     def fetch(self, url: str) -> dict[str, object]: ...
 
 
@@ -123,6 +123,7 @@ class SearchedSources:
     query: str
     hits: tuple[JsonObject, ...] = ()
     error: str = ""
+    state: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -171,21 +172,21 @@ class ResearchSourceGateway:
             return SearchedSources(query="", error="empty query")
         cancellation.check()
         try:
-            results = self.search_provider.search(query, limit=limit)
+            outcome = self.search_provider.search(query, limit=limit)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             self._fail("search", "search", exc)
             detail = str(exc) or type(exc).__name__
-            return SearchedSources(query=query, error=f"search failed: {detail}")
+            outcome = failed_search(query, type(self.search_provider).__name__, "search_execution_failed", detail)
         cancellation.check()
-        results, rejected = filter_site_results(query, results)
-        attempts = provider_search_attempts(self.search_provider)
-        if rejected or not attempts:
-            attempts += (SearchAttempt(query, type(self.search_provider).__name__, extraction_scope="provider_results",
-                accepted_urls=tuple(str(row["url"]) for row in results), rejected_urls=rejected),)
-        self.ledger.record_search(query, results, attempts=attempts)
-        return SearchedSources(query=query, hits=tuple(results or ()))
+        results = outcome.rows
+        self.ledger.record_search(query, results, attempts=outcome.attempts,
+                                  state=outcome.state.value, failure_kind=outcome.failure_kind)
+        if outcome.state == SearchState.FAILED:
+            return SearchedSources(query=query, error=f"search failed: {outcome.failure_kind}: {outcome.detail}",
+                                   state=outcome.state.value)
+        return SearchedSources(query=query, hits=tuple(results), state=outcome.state.value)
 
     def open(
         self,

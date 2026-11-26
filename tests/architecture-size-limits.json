@@ -1,12 +1,11 @@
 {
-  "automation/browser_runtime.py": 1326,
+  "automation/browser_runtime.py": 1323,
   "completion/verification_policy.py": 1006,
   "durable/model.py": 1086,
   "durable/sqlite.py": 1029,
   "providers/api_provider.py": 1056,
   "providers/controls.py": 1384,
   "providers/worker.py": 1031,
-  "research/browser_search.py": 1039,
   "research/object_model.py": 1012,
   "research/source_connectors.py": 1173,
   "runs/trace.py": 1524,

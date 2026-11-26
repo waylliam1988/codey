@@ -9,11 +9,13 @@ import pytest
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_document import PublicationMetadata
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.source_observation import source_observation
 from codey.runtime.core.cancellation import TaskCancelled
 from codey.types.json_value import JsonObject, decode_json_object
+from tests.support.search_fixture import search_outcome
 
 pytestmark = pytest.mark.usefixtures("public_source_dns")
 
@@ -26,10 +28,10 @@ class _FakeSearch:
         self._errors = dict(errors or {})
         self.name = "fake-search"
 
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+    def search(self, query: str, limit: int = 8) -> SearchOutcome:
         if "search" in self._errors:
             raise self._errors["search"]
-        return list(self._results)[:limit]
+        return search_outcome(query, list(self._results)[:limit], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         if url in self._errors:

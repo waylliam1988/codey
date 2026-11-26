@@ -1,5 +1,7 @@
 """The common kernel freezes one latest observation in plain and native APIs."""
 
+from __future__ import annotations
+
 import json
 
 import pytest
@@ -9,16 +11,18 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from tests.support.kernel_runtime import run_task_kernel
+from tests.support.search_fixture import search_outcome
 
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
-def test_latest_research_context_is_ephemeral_in_real_kernel_requests(monkeypatch, native, protocol):
+def test_latest_research_context_is_ephemeral_in_real_kernel_requests(monkeypatch: pytest.MonkeyPatch, native: bool, protocol: str) -> None:
     payloads = []
 
-    def generate(_url, payload, *_args, **_kwargs):
+    def generate(_url: str, payload: dict[str, object], *_args: object, **_kwargs: object) -> dict[str, object]:
         payloads.append(payload)
         name, args = (("web_search", {"query": "compare outcomes", "question_ref": "q1"}) if len(payloads) == 1
                       else ("done", {"summary": "Attempted acquisition; outcome evidence remains missing."}))
@@ -40,8 +44,8 @@ def test_latest_research_context_is_ephemeral_in_real_kernel_requests(monkeypatc
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})), task_kind="evidence_followup",
                           task_text="比较结果，中文补查", max_turns=3, research_acquisition_limits=(1, 1))
     class Search:
-        def search(self, query, limit=8):
-            return []
+        def search(self, query: str, limit: int=8) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
     tools = ResearchTools(search=Search(), store=None, changes=None)
     tools.ledger.questions = session.research_questions = ("Compare outcomes",)

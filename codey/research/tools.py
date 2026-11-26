@@ -148,6 +148,8 @@ class ResearchTools:
             return ResearchToolOutput(f"ERROR: {outcome.error}", ok=False)
         results = outcome.hits
         if not results:
+            if outcome.state == "filtered_empty":
+                return ResearchToolOutput("no results matched the requested search scope", ok=True)
             return ResearchToolOutput("no results", ok=True)
         lines: list[str] = []
         skipped = 0

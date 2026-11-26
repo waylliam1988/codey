@@ -19,6 +19,8 @@ import re
 import socket
 import threading
 import time
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from enum import Enum
 from urllib.parse import ParseResult, urlparse
@@ -87,6 +89,7 @@ class NetworkPolicy:
         self.allow_dns_fake_ip = allow_dns_fake_ip
         self._cache: dict[tuple[str, str, int], tuple[float, str | None]] = {}
         self._lock = threading.Lock()
+        self._pending: dict[tuple[str, str, int], Future[str | None]] = {}
 
     def evaluate_url(self, url: str, *, resolve: bool = True, use_cache: bool = False) -> NetworkDecision:
         reason = self.check_url(url, resolve=resolve, use_cache=use_cache)
@@ -144,23 +147,42 @@ class NetworkPolicy:
         effective_port = port or (443 if parsed.scheme == "https" else 80)
         cache_key = (parsed.scheme, normalized_host, effective_port)
 
-        now = time.monotonic()
-        if use_cache:
+        if not use_cache:
+            return self._resolve_host(normalized_host, effective_port)
+        with self._lock:
+            entry = self._cache.get(cache_key)
+            if entry is not None:
+                cached_at, cached_reason = entry
+                ttl = self.allowed_cache_ttl_seconds if cached_reason is None else self.blocked_cache_ttl_seconds
+                if time.monotonic() - cached_at <= ttl:
+                    return cached_reason
+            pending = self._pending.get(cache_key)
+            leader = pending is None
+            if pending is None:
+                pending = Future()
+                self._pending[cache_key] = pending
+        if not leader:
+            try:
+                return pending.result(timeout=5.0)
+            except FutureTimeout:
+                return "could not resolve host"
+        try:
+            reason = self._resolve_host(normalized_host, effective_port)
+            self._record_cache(cache_key, reason, time.monotonic())
+            pending.set_result(reason)
+            return reason
+        finally:
+            # Even an unexpected resolver error must release coalesced callers.
+            if not pending.done():
+                pending.set_result("could not resolve host")
             with self._lock:
-                entry = self._cache.get(cache_key)
-                if entry is not None:
-                    cached_at, cached_reason = entry
-                    ttl = self.allowed_cache_ttl_seconds if cached_reason is None else self.blocked_cache_ttl_seconds
-                    if now - cached_at <= ttl:
-                        return cached_reason
+                self._pending.pop(cache_key, None)
 
+    def _resolve_host(self, normalized_host: str, effective_port: int) -> str | None:
         try:
             infos = socket.getaddrinfo(normalized_host, effective_port, proto=socket.IPPROTO_TCP)
         except OSError:
-            dns_reason = "could not resolve host"
-            if use_cache:
-                self._record_cache(cache_key, dns_reason, now)
-            return dns_reason
+            return "could not resolve host"
 
         saw_resolved_address = False
         reason: str | None = None
@@ -178,9 +200,6 @@ class NetworkPolicy:
 
         if not saw_resolved_address and reason is None:
             reason = "could not resolve host"
-
-        if use_cache:
-            self._record_cache(cache_key, reason, now)
 
         return reason
 
@@ -212,3 +231,14 @@ __all__ = [
     "check_fetch_url",
     "is_valid_hostname",
 ]
+
+
+def check_browser_url(url: str, resource_type: str, navigation: bool) -> str | None:
+    """Inline subresources have no network endpoint; documents keep the URL policy."""
+    try:
+        scheme = _parse_network_url(url).scheme
+    except ValueError:
+        return "invalid URL"
+    if scheme in {"data", "blob"} and resource_type != "document" and not navigation:
+        return None
+    return check_fetch_url(url, use_cache=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from itertools import permutations
+from pathlib import Path
 
 import pytest
 
@@ -9,9 +10,10 @@ from codey.operations.reference_handles import ReferenceHandleError, ReferenceHa
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_observation import source_observation, source_snapshot
 from codey.runtime.core.models import ToolCall
-from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 from tests.test_committed_research_projection import runtime
 
 
@@ -19,15 +21,15 @@ class _ChangingSource:
     def __init__(self) -> None:
         self.body = "Initial article amount is 17 grams.\n" * 32
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         return {"status": "ok", "url": url, "title": "Record", "text": self.body}
 
 
 @pytest.mark.parametrize("clock", ["2026-11-10T00:00:00+00:00", "2020-01-01T00:00:00+00:00"])
-def test_sequential_captures_keep_original_order_under_equal_or_backwards_clock(monkeypatch, clock: str) -> None:
+def test_sequential_captures_keep_original_order_under_equal_or_backwards_clock(monkeypatch: pytest.MonkeyPatch, clock: str) -> None:
     url = "https://example.com/record"
     ledger = ResearchLedger()
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})))
@@ -55,7 +57,7 @@ def test_sequential_captures_keep_original_order_under_equal_or_backwards_clock(
 
 
 def test_production_delegate_stamps_each_read_from_formal_source_versions(
-    tmp_path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session, tools, managed, _deps, _sink = runtime(tmp_path, monkeypatch)
     backend = _ChangingSource()

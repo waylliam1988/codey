@@ -59,6 +59,9 @@ class SearchRecord:
     timestamp: str
     results: tuple[SearchResultRecord, ...] = ()
     attempts: tuple[SearchAttempt, ...] = ()
+    version: int = 2
+    state: str = "unknown"
+    failure_kind: str = ""
 
     def to_dict(self) -> JsonObject:
         data = canonical_json_object(encode_transport_value(self))
@@ -148,8 +151,9 @@ class ResearchLedger:
         self._source_page_versions = staged._source_page_versions
 
     def record_search(self, query: str, results: Sequence[Mapping[str, object]], *,
-                      attempts: tuple[SearchAttempt, ...] = ()) -> None:
-        query = " ".join((query or "").split())
+                      attempts: tuple[SearchAttempt, ...] = (), state: str = "unknown",
+                      failure_kind: str = "") -> None:
+        query = query.strip()
         if not query:
             return
         items: list[SearchResultRecord] = []
@@ -163,7 +167,8 @@ class ResearchLedger:
                 url=url,
                 snippet=_clip(str(result.get("snippet") or ""), 260),
             ))
-        self.searches.append(SearchRecord(query=query, timestamp=now_iso(), results=tuple(items), attempts=attempts))
+        self.searches.append(SearchRecord(query=query, timestamp=now_iso(), results=tuple(items), attempts=attempts,
+                                         state=state, failure_kind=failure_kind))
 
     def record_open(self, requested_url: str, final_url: str, title: str, text: str) -> None:
         self.record_open_document(SourceDocument.html(

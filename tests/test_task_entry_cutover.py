@@ -21,6 +21,7 @@ from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchToolOutput
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.events import RunEvent
@@ -30,6 +31,7 @@ from codey.toolchain.runtime import ToolOutcome
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object
 from tests.support.kernel_fixture import runtime
+from tests.support.search_fixture import search_outcome
 from tests.support.task_entry_helpers import entry_frame
 
 
@@ -332,8 +334,8 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path: Path) -> No
     url = "https://example.com/evidence"
 
     class Search:
-        def search(self, query: str, *, limit: int=8) -> list[JsonObject]:
-            return [{"title": "Evidence", "url": url, "snippet": "claim"}]
+        def search(self, query: str, *, limit: int=8) -> SearchOutcome:
+            return search_outcome(query, [{"title": "Evidence", "url": url, "snippet": "claim"}], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             return {"status": "ok", "url": url, "title": "Evidence", "text": "claim text"}
@@ -384,8 +386,8 @@ def test_search_result_ids_remain_stable_across_searches() -> None:
     urls = iter(("https://example.com/a", "https://example.com/b"))
 
     class Search:
-        def search(self, query: str, *, limit: int=8) -> list[JsonObject]:
-            return [{"title": "Result", "url": next(urls), "snippet": ""}]
+        def search(self, query: str, *, limit: int=8) -> SearchOutcome:
+            return search_outcome(query, [{"title": "Result", "url": next(urls), "snippet": ""}], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             raise AssertionError("this test only searches")
@@ -507,9 +509,9 @@ def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path: Path) ->
             return next(replies)
 
     class Search:
-        def search(self, query: str, *, limit: int=8) -> list[JsonObject]:
+        def search(self, query: str, *, limit: int=8) -> SearchOutcome:
             assert query == "official docs"
-            return [{"title": "Docs", "url": "https://example.com/docs", "snippet": "Official docs"}]
+            return search_outcome(query, [{"title": "Docs", "url": "https://example.com/docs", "snippet": "Official docs"}], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             raise AssertionError("this test only searches")
@@ -1418,7 +1420,7 @@ def test_unified_research_externalizes_large_opened_source(tmp_path: Path) -> No
     url = "https://example.com/large"
 
     class Search:
-        def search(self, query: str, *, limit: int=8) -> list[JsonObject]:
+        def search(self, query: str, *, limit: int=8) -> SearchOutcome:
             raise AssertionError("this test only fetches")
 
         def fetch(self, url: str) -> dict[str, object]:
@@ -1541,8 +1543,8 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path: Pat
     ))
 
     class Search:
-        def search(self, query: str, *, limit: int=8) -> list[JsonObject]:
-            return [{"title": "Pipeline source", "url": url, "snippet": "Pipeline source text."}]
+        def search(self, query: str, *, limit: int=8) -> SearchOutcome:
+            return search_outcome(query, [{"title": "Pipeline source", "url": url, "snippet": "Pipeline source text."}], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             return {"status": "ok", "url": url, "title": "Pipeline source",
@@ -1603,8 +1605,8 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path: Pa
                           turn_budget=2, max_repair_rounds=0, task_kind="research")
 
     class Search:
-        def search(self, query: str, *, limit: int=8) -> list[JsonObject]:
-            return [{"title": "Result", "url": "https://example.com", "snippet": query}]
+        def search(self, query: str, *, limit: int=8) -> SearchOutcome:
+            return search_outcome(query, [{"title": "Result", "url": "https://example.com", "snippet": query}], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             raise AssertionError("this test only searches")

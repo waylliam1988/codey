@@ -1,5 +1,9 @@
+
+from __future__ import annotations
+
 import json
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,12 +20,14 @@ from codey.operations.research.research_completion_checks import knowledge_refer
 from codey.operations.research_iteration import _persist_synthesis
 from codey.policies.task_policy import TaskPolicy
 from codey.research.methods import research_method_guidance
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_document import SourceDocument
 from codey.research.tools import ResearchTools
+from tests.support.search_fixture import search_outcome
 from tests.test_knowledge_repository import example
 
 
-def test_evidence_only_tool_receipts_do_not_request_parent_done_fields(tmp_path):
+def test_evidence_only_tool_receipts_do_not_request_parent_done_fields(tmp_path: Path) -> None:
     from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolCall
@@ -53,7 +59,7 @@ def test_evidence_only_tool_receipts_do_not_request_parent_done_fields(tmp_path)
         store.close()
 
 
-def test_unknown_explicit_note_update_cannot_silently_create_duplicates(tmp_path):
+def test_unknown_explicit_note_update_cannot_silently_create_duplicates(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="first")
@@ -74,7 +80,7 @@ def test_unknown_explicit_note_update_cannot_silently_create_duplicates(tmp_path
         store.close()
 
 
-def test_explicit_commit_undo_and_session_graph(tmp_path):
+def test_explicit_commit_undo_and_session_graph(tmp_path: Path) -> None:
     with_store = KnowledgeStore(tmp_path)
     try:
         changes = KnowledgeChanges(tmp_path)
@@ -89,7 +95,7 @@ def test_explicit_commit_undo_and_session_graph(tmp_path):
         with_store.close()
 
 
-def test_uncited_saved_knowledge_is_not_automatically_attached_to_answer(tmp_path):
+def test_uncited_saved_knowledge_is_not_automatically_attached_to_answer(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="current")
@@ -112,7 +118,7 @@ def test_uncited_saved_knowledge_is_not_automatically_attached_to_answer(tmp_pat
         store.close()
 
 
-def test_purge_removes_dependent_documents_exports_and_prevents_replay(tmp_path):
+def test_purge_removes_dependent_documents_exports_and_prevents_replay(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         private = K("private", "observation", "A private observation", "user_statement", scope="personal", scope_id="owner")
@@ -134,7 +140,7 @@ def test_purge_removes_dependent_documents_exports_and_prevents_replay(tmp_path)
         store.close()
 
 
-def test_shared_staged_excerpts_keep_stances_and_exact_source_text(tmp_path):
+def test_shared_staged_excerpts_keep_stances_and_exact_source_text(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="first")
@@ -164,7 +170,7 @@ def test_shared_staged_excerpts_keep_stances_and_exact_source_text(tmp_path):
         store.close()
 
 
-def test_answer_pins_cited_versions_and_replay_rejects_changed_output(tmp_path):
+def test_answer_pins_cited_versions_and_replay_rejects_changed_output(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         store.repository.commit("initial", example())
@@ -193,7 +199,7 @@ def test_answer_pins_cited_versions_and_replay_rejects_changed_output(tmp_path):
         store.close()
 
 
-def test_identical_source_reopens_do_not_create_revisions_or_stale_old_claims(tmp_path, monkeypatch):
+def test_identical_source_reopens_do_not_create_revisions_or_stale_old_claims(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, None, session_id="first")
@@ -227,7 +233,7 @@ def test_identical_source_reopens_do_not_create_revisions_or_stale_old_claims(tm
         store.close()
 
 
-def test_long_claim_keeps_trailing_limit_in_database_and_recovery_receipt(tmp_path):
+def test_long_claim_keeps_trailing_limit_in_database_and_recovery_receipt(tmp_path: Path) -> None:
     from codey.research.ledger import MAX_CLAIM_CHARS, ResearchLedger
     from codey.research.ledger_receipts import ledger_observation, restore_ledger_observation
 
@@ -259,7 +265,7 @@ def test_long_claim_keeps_trailing_limit_in_database_and_recovery_receipt(tmp_pa
         reopened.close()
 
 
-def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_path):
+def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         store.repository.commit("initial", example())
@@ -279,7 +285,7 @@ def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_pat
         store.close()
 
 
-def test_conditions_object_shape_agrees_across_tool_protocols():
+def test_conditions_object_shape_agrees_across_tool_protocols() -> None:
     from codey.research.tool_contract import validate_tool_args
     from codey.toolchain.tool_spec import spec_for_tool, validate_args_against_spec
     from tests.support.research_tool_contract import openai_parameters_schema
@@ -295,21 +301,21 @@ def test_conditions_object_shape_agrees_across_tool_protocols():
     assert "object" in validate_tool_args("knowledge_write", args).error
 
 
-def test_shared_driver_bounds_parallel_source_calls(tmp_path):
+def test_shared_driver_bounds_parallel_source_calls(tmp_path: Path) -> None:
     from codey.operations.task_session import TaskSession
     from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
 
     calls = []
 
     class Search:
-        def search(self, query, limit=8):
+        def search(self, query: str, limit: int=8) -> SearchOutcome:
             calls.append(query)
-            return []
+            return search_outcome(query, [], limit=limit)
 
     class Provider:
         native_tools = False
 
-        def send(self, prompt):
+        def send(self, prompt: str) -> str:
             return "\n".join(json.dumps({"tool": "web_search", "args": {"query": query}})
                              for query in ("first", "second"))
 
@@ -327,7 +333,7 @@ def test_shared_driver_bounds_parallel_source_calls(tmp_path):
         store.close()
 
 
-def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path):
+def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         tools = ResearchTools(None, store, KnowledgeChanges(tmp_path), session_id="first")
@@ -362,7 +368,7 @@ def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path):
         store.close()
 
 
-def test_repeated_staged_update_receipts_restore_cumulative_proposals_after_commit(tmp_path):
+def test_repeated_staged_update_receipts_restore_cumulative_proposals_after_commit(tmp_path: Path) -> None:
     from codey.operations.research.research_continuation import restore_note_proposals
     from codey.operations.task_execution import ExecutionDelegate
     from codey.operations.task_session import TaskSession
@@ -401,7 +407,7 @@ def test_repeated_staged_update_receipts_restore_cumulative_proposals_after_comm
 
 
 @pytest.mark.parametrize("stop_reason", ["controller_failure", "provider_failure", "recovery_failure", "delivery_pending"])
-def test_initial_research_failure_is_not_replaced_by_a_successor_error(tmp_path, monkeypatch, stop_reason):
+def test_initial_research_failure_is_not_replaced_by_a_successor_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop_reason: str) -> None:
     from codey.operations.kernel_contracts import KernelResult
     from codey.research.browser_search import BrowserSearchProvider
     from codey.research.pipeline import ResearchContinuationError
@@ -420,7 +426,7 @@ def test_initial_research_failure_is_not_replaced_by_a_successor_error(tmp_path,
         store.close()
 
 
-def test_strict_research_can_read_long_tool_results_at_every_stage():
+def test_strict_research_can_read_long_tool_results_at_every_stage() -> None:
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import controller_allowed_for_session
 
@@ -432,7 +438,7 @@ def test_strict_research_can_read_long_tool_results_at_every_stage():
     assert "read_tool_result" in controller_allowed_for_session(session)
 
 
-def test_private_user_observations_survive_conversation_change_without_publication(tmp_path):
+def test_private_user_observations_survive_conversation_change_without_publication(tmp_path: Path) -> None:
     root = tmp_path / "owner-space"
     store = KnowledgeStore(root)
     owner = store.owner_id

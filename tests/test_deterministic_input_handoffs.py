@@ -23,10 +23,12 @@ from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, parse_json_object
+from tests.support.search_fixture import search_outcome
 from tests.test_browser_context_delivery import URL as CONTROL_URL
 from tests.test_browser_context_delivery import install
 from tests.test_browser_context_delivery import production_browser as production_browser
@@ -326,8 +328,8 @@ def test_evidence_view_budgets_the_contract_without_revoking_original_read_windo
     from codey.research.source_reading import render_source_read
 
     class Source:
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
         def fetch(self, url: str) -> dict[str, object]:
             return {"status": "ok", "url": url, "title": "Device manual", "text": "Exact original device statement. " * 600,
                     "truncated": False}

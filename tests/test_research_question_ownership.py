@@ -15,10 +15,12 @@ from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tool_names import INVESTIGATION_TOOLS
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, parse_json_object
+from tests.support.search_fixture import search_outcome
 
 URL = "https://example.com/study"
 TEXT = "Writers and readers can run at the same time. There is only one writer at a time."
@@ -28,8 +30,8 @@ class Search:
     def fetch(self, url: str) -> dict[str, object]:
         return {"status": "ok", "url": url, "title": "Original study", "text": TEXT, "truncated": False}
 
-    def search(self, query: str, *, limit: int = 8) -> list[JsonObject]:
-        return [{"url": URL, "title": "Original study", "snippet": "Lead, not evidence"}]
+    def search(self, query: str, *, limit: int = 8) -> SearchOutcome:
+        return search_outcome(query, [{"url": URL, "title": "Original study", "snippet": "Lead, not evidence"}], limit=limit)
 
 
 def setup(path: Path) -> tuple[KnowledgeStore, ResearchTools, TaskSession, ExecutionDelegate]:

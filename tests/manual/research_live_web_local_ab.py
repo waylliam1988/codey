@@ -8,15 +8,29 @@ import json
 import socket
 import ssl
 import time
-from contextlib import ExitStack
+from collections.abc import Callable
+from contextlib import AbstractContextManager, ExitStack
 from dataclasses import replace
+from http.client import HTTPResponse
 from pathlib import Path
+from typing import ParamSpec, Protocol
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from codey.providers import api_provider
+from codey.providers.api_provider import ApiProvider
+from codey.providers.local_config import LocalProviderConfig
 from codey.research import connector_search as production
-from codey.runtime.core import cancellation
+from codey.research.browser_search import BrowserSearchProvider
+from codey.research.search_contracts import SearchOutcome
+from codey.research.web_sources import WebSourceProvider
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    encode_transport_value,
+    parse_json_object,
+    require_json_string,
+)
 from tests.manual import persistent_research_local as stage_module
 
 ARMS = ("baseline", "browser_after_connector")
@@ -37,7 +51,7 @@ QUESTIONS = {
 }
 
 
-def apply_experiment_output_budget(config):
+def apply_experiment_output_budget(config: LocalProviderConfig) -> LocalProviderConfig:
     from codey.providers import local_config
 
     context = config.context or local_config.LocalContextBudget(
@@ -46,110 +60,88 @@ def apply_experiment_output_budget(config):
                                            source="2a-live-contract"))
 
 
-class BrowserAfterConnector(production.ConnectorAwareSearchProvider):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.observations = {"connector_calls": 0, "browser_calls": 0}
+class ObservedProduction(WebSourceProvider):
+    """Observe the canonical coordinator; historical arm labels share adopted behavior."""
+    def __init__(self, base: BrowserSearchProvider, *, connector_ids: tuple[str, ...] = production.CONNECTOR_SEARCH_IDS) -> None:
+        self.base = base
+        super().__init__(browser_factory=lambda: base.browser_source,
+                         scholarly=production.ScholarlySources(connector_ids=connector_ids))
+        self.observations: JsonObject = {"connector_calls": 0, "browser_calls": 0}
 
-    def _connector_search_results(self, *args, **kwargs):
-        self.observations["connector_calls"] += 1
-        rows = super()._connector_search_results(*args, **kwargs)
-        self.observations.setdefault("connector_results", []).append(
-            {"query": args[0], "urls": [row["url"] for row in rows]})
-        return rows
+    def search(self, query: str, *, limit: int = 8) -> SearchOutcome:
+        outcome = super().search(query, limit=limit)
+        self.observations = {
+            "connector_calls": sum(attempt.coverage == "scholarly" for attempt in outcome.attempts),
+            "browser_calls": sum(attempt.engine in {"bing", "duckduckgo"} for attempt in outcome.attempts),
+            "attempts": encode_transport_value(outcome.attempts)}
+        return outcome
 
-    def _base_search(self, *args, **kwargs):
-        self.observations["browser_calls"] += 1
-        rows = super()._base_search(*args, **kwargs)
-        self.observations.setdefault("browser_results", []).append(
-            {"query": args[0], "urls": [row["url"] for row in rows]})
-        return rows
-
-    def search(self, query: str, limit: int = 8):  # type: ignore[no-untyped-def]
-        query = " ".join((query or "").split())
-        if not query:
-            return []
-        result_limit = production._bounded_limit(limit, default=8, upper=production.MAX_CONNECTOR_HITS)
-        self.last_search_failures = []
-        self.last_search_failure = {}
-        connector_rows = self._connector_search_results(
-            query, limit=min(self.connector_limit, result_limit),
-            safe_query=production.safe_connector_query(query, limit=12),
-        )
-        try:
-            browser_rows = self._base_search(query, limit=result_limit)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            if not connector_rows:
-                raise
-            browser_rows = []
-        return production._merge_results(connector_rows, browser_rows, limit=result_limit)
+    def close(self) -> None:
+        super().close()
+        self.base.close()
 
 
-class ObservedProduction(production.ConnectorAwareSearchProvider):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.observations = {"connector_calls": 0, "browser_calls": 0}
+BrowserAfterConnector = ObservedProduction
 
-    def _connector_search_results(self, *args, **kwargs):
-        self.observations["connector_calls"] += 1
-        rows = super()._connector_search_results(*args, **kwargs)
-        self.observations.setdefault("connector_results", []).append(
-            {"query": args[0], "urls": [row["url"] for row in rows]})
-        return rows
 
-    def _base_search(self, *args, **kwargs):
-        self.observations["browser_calls"] += 1
-        rows = super()._base_search(*args, **kwargs)
-        self.observations.setdefault("browser_results", []).append(
-            {"query": args[0], "urls": [row["url"] for row in rows]})
-        return rows
+P = ParamSpec("P")
+
+
+def _with_request_configuration(factory: Callable[P, ApiProvider], adjust: Callable[[dict[str, object]], None]) -> Callable[P, ApiProvider]:
+    def create(*args: P.args, **kwargs: P.kwargs) -> ApiProvider:
+        provider = factory(*args, **kwargs)
+        original = provider.configure_request
+        def configure(payload: dict[str, object]) -> None:
+            original(payload)
+            adjust(payload)
+        provider.configure_request = configure
+        return provider
+    return create
+
+
+class _ResearchStage(Protocol):
+    def __call__(self, directory: Path, name: str, upstream: str, model: str, *, native: bool,
+                 live_web: bool, question: str, max_turns: int, seed: int, provider_timeout: float,
+                 constrained_text: bool) -> None: ...
 
 
 def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
         *, constrained_text: bool = False) -> None:
-    with urlopen(base_url + "/api/extra/perf", timeout=10) as response:
-        perf = json.load(response)
+    opened: AbstractContextManager[HTTPResponse] = urlopen(base_url + "/api/extra/perf", timeout=10)
+    with opened as response:
+        perf = parse_json_object(response.read().decode("utf-8"))
     if perf.get("idle") != 1 or perf.get("queue") != 0:
         raise RuntimeError("Backend is busy; do not queue another experimental run")
     directory = root / f"{case}-{seed}-{arm}"
     directory.mkdir(parents=True, exist_ok=False)
 
-    holder = {}
-    compiled_schemas = {}
+    holder: dict[str, ObservedProduction] = {}
+    compiled_schemas: dict[str, JsonObject] = {}
 
-    class ZeroReasoningProvider(api_provider.ApiProvider):
-        """Experiment-only request control; leave production effort options alone."""
+    def zero_reasoning(payload: dict[str, object]) -> None:
+        payload["reasoning_effort"] = "none"
+        raw_format = payload.get("response_format")
+        if not isinstance(raw_format, dict):
+            return
+        response_format = decode_json_object(raw_format)
+        if response_format.get("type") == "json_schema":
+            schema = decode_json_object(response_format["json_schema"])["schema"]
+            digest = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+            if digest not in compiled_schemas:
+                request = Request(base_url + "/api/extra/json_to_grammar", json.dumps({"schema": schema}).encode(),
+                                  {"Content-Type": "application/json"})
+                opened: AbstractContextManager[HTTPResponse] = urlopen(request, timeout=10)
+                with opened as response:
+                    compilation = parse_json_object(response.read().decode("utf-8"))
+                grammar = require_json_string(compilation.get("result", ""), "grammar")
+                if not compilation.get("success") or not grammar:
+                    raise RuntimeError("Backend discarded experimental tool schema; stop before inference")
+                compiled_schemas[digest] = {"grammar_hash": hashlib.sha256(grammar.encode()).hexdigest(),
+                                           "grammar_length": len(grammar)}
 
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            configure = self.configure_request
+    configured_provider = _with_request_configuration(api_provider.ApiProvider, zero_reasoning)
 
-            def zero_reasoning(payload):
-                configure(payload)
-                payload["reasoning_effort"] = "none"
-                response_format = payload.get("response_format", {})
-                if response_format.get("type") == "json_schema":
-                    schema = response_format["json_schema"]["schema"]
-                    digest = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
-                    if digest not in compiled_schemas:
-                        request = Request(base_url + "/api/extra/json_to_grammar",
-                                          json.dumps({"schema": schema}).encode(),
-                                          {"Content-Type": "application/json"})
-                        with urlopen(request, timeout=10) as response:
-                            compilation = json.load(response)
-                        grammar = compilation.get("result", "")
-                        if not compilation.get("success") or not grammar:
-                            raise RuntimeError("Backend discarded experimental tool schema; stop before inference")
-                        compiled_schemas[digest] = {
-                            "grammar_hash": hashlib.sha256(grammar.encode()).hexdigest(),
-                            "grammar_length": len(grammar),
-                        }
-
-            self.configure_request = zero_reasoning
-
-    def provider_factory():
+    def provider_factory() -> ObservedProduction:
         from codey.research.browser_search import BrowserSearchProvider
 
         base = BrowserSearchProvider(isolated=False, bring_to_front=False)
@@ -162,22 +154,21 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
 
         save_config = local_config.save_local_config
 
-        def save_with_output_budget(config):
+        def save_with_output_budget(config: LocalProviderConfig) -> None:
             return save_config(apply_experiment_output_budget(config))
 
         stack.enter_context(patch.object(local_config, "save_local_config", save_with_output_budget))
-        stack.enter_context(patch.object(api_provider, "ApiProvider", ZeroReasoningProvider))
+        stack.enter_context(patch.object(api_provider, "ApiProvider", configured_provider))
         stack.enter_context(patch("codey.operations.task_execution.default_research_search_provider", provider_factory, create=True))
         stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", provider_factory))
-        old_context = ssl._create_default_https_context
-        ssl._create_default_https_context = ssl._create_unverified_context
+        stack.enter_context(patch.object(ssl, "_create_default_https_context", ssl._create_unverified_context))
         started = time.monotonic()
         try:
-            stage_module.stage(directory, "research", base_url, model, native=False, live_web=True,
+            stage: _ResearchStage = stage_module.stage
+            stage(directory, "research", base_url, model, native=False, live_web=True,
                                question=QUESTIONS[case], max_turns=12, seed=seed, provider_timeout=180,
                                constrained_text=constrained_text)
         finally:
-            ssl._create_default_https_context = old_context
             observations = holder["provider"].observations if "provider" in holder else {}
             (directory / "search-observations.json").write_text(
                 json.dumps({**observations, "elapsed_seconds": time.monotonic() - started,
@@ -199,8 +190,12 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://127.0.0.1:5001")
     parser.add_argument("--constrained-text", action="store_true")
     args = parser.parse_args()
-    with urlopen(args.base_url + "/v1/models", timeout=5) as response:
-        model = json.load(response)["data"][0]["id"]
+    opened: AbstractContextManager[HTTPResponse] = urlopen(args.base_url + "/v1/models", timeout=5)
+    with opened as response:
+        models = parse_json_object(response.read().decode("utf-8"))["data"]
+    if not isinstance(models, list) or not models:
+        raise ValueError("local endpoint did not advertise a model")
+    model = require_json_string(decode_json_object(models[0])["id"], "model id")
     # A process-scoped socket releases automatically on failure or cancellation.
     # All live runs using this harness must share this single-writer lock.
     with socket.socket() as lock:

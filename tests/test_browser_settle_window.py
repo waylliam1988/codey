@@ -6,13 +6,13 @@ import time
 from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Page, Route
 
-from codey.research.browser_search import BrowserSearchProvider
+from codey.automation.browser_contracts import RouteDecision
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.runtime.core import cancellation
-from tests.support.real_cdp import chromium_executable
+from tests.support.task_browser import browser_for
 
 URL = "https://example.com/settle/"
 BODY = "Winter sample: 327 grams. Packaging is excluded."
@@ -27,27 +27,22 @@ DOCUMENTS = {
 
 
 @pytest.fixture
-def source(monkeypatch: pytest.MonkeyPatch, public_source_dns: None,
-           ) -> Iterator[tuple[BrowserSearchProvider, list[str]]]:
+def source(public_source_dns: None) -> Iterator[tuple[TaskBrowserSource, list[str]]]:
     navigations: list[str] = []
-
-    def route_document(_provider: BrowserSearchProvider, route: Route) -> None:
-        if route.request.is_navigation_request():
-            navigations.append(route.request.url)
+    def route_document(route: RouteDecision) -> None:
+        navigations.append(route.request.url)
         document = DOCUMENTS[route.request.url]
         status = 503 if route.request.url == URL + "http-error" else 200
         route.fulfill(status=status, content_type="text/html; charset=utf-8", body=document)
-
-    monkeypatch.setattr(BrowserSearchProvider, "_guard_request", route_document)
-    provider = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
+    browser = browser_for(route_document)
     try:
-        yield provider, navigations
+        yield TaskBrowserSource(browser), navigations
     finally:
-        provider.close()
+        browser.close()
 
 
 def test_slow_hydration_is_captured_after_old_four_second_limit(
-    source: tuple[BrowserSearchProvider, list[str]],
+    source: tuple[TaskBrowserSource, list[str]],
 ) -> None:
     provider, navigations = source
     ledger = ResearchLedger()
@@ -59,7 +54,7 @@ def test_slow_hydration_is_captured_after_old_four_second_limit(
 
 
 def test_readable_page_returns_within_shorter_caller_deadline(
-    source: tuple[BrowserSearchProvider, list[str]],
+    source: tuple[TaskBrowserSource, list[str]],
 ) -> None:
     provider, _navigations = source
     assert provider.fetch(URL + "ready")["status"] == "ok"  # Warm browser outside the caller budget.
@@ -69,7 +64,7 @@ def test_readable_page_returns_within_shorter_caller_deadline(
 
 
 def test_persistently_loading_page_expires_without_source_evidence(
-    source: tuple[BrowserSearchProvider, list[str]],
+    source: tuple[TaskBrowserSource, list[str]],
 ) -> None:
     provider, navigations = source
     ledger = ResearchLedger()
@@ -81,11 +76,13 @@ def test_persistently_loading_page_expires_without_source_evidence(
 
 
 def test_http_error_rejects_loading_shell_before_dom_read(
-    source: tuple[BrowserSearchProvider, list[str]], monkeypatch: pytest.MonkeyPatch,
+    source: tuple[TaskBrowserSource, list[str]], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider, navigations = source
     ledger = ResearchLedger()
-    monkeypatch.setattr(Page, "content", lambda _: pytest.fail("HTTP error must be rejected before reading the DOM"))
+    def forbidden_capture() -> dict[str, object]:
+        raise AssertionError("HTTP error must be rejected before reading the DOM")
+    monkeypatch.setattr(provider.browser, "capture", forbidden_capture)
 
     opened = ResearchSourceGateway(provider, ledger).open(URL + "http-error")
 
@@ -95,7 +92,7 @@ def test_http_error_rejects_loading_shell_before_dom_read(
 
 
 def test_caller_deadline_interrupts_loading_before_settle_limit(
-    source: tuple[BrowserSearchProvider, list[str]],
+    source: tuple[TaskBrowserSource, list[str]],
 ) -> None:
     provider, _navigations = source
     assert provider.fetch(URL + "ready")["status"] == "ok"
@@ -106,7 +103,7 @@ def test_caller_deadline_interrupts_loading_before_settle_limit(
 
 
 def test_cancellation_interrupts_loading_without_source_evidence(
-    source: tuple[BrowserSearchProvider, list[str]],
+    source: tuple[TaskBrowserSource, list[str]],
 ) -> None:
     provider, _navigations = source
     assert provider.fetch(URL + "ready")["status"] == "ok"

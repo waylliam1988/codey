@@ -10,17 +10,19 @@ from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from tests.support.search_fixture import search_outcome
 
 
 class Source:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.calls.append(url)

@@ -14,6 +14,9 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+from codey.research.search_contracts import SearchOutcome
+from tests.support.search_fixture import search_outcome
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -97,9 +100,9 @@ def format_ok(case: str, summary: str) -> bool:
 
 @contextmanager
 def fixed_web() -> Generator[None, None, None]:
-    def search(provider: WebSourceProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
+    def search(provider: WebSourceProvider, query: str, *, limit: int = 8) -> SearchOutcome:
         results: list[JsonObject] = [{"title": "福州小吃记录", "url": SOURCE, "snippet": "三种传统小吃的食材与做法。"}]
-        return results[:limit]
+        return search_outcome(query, results[:limit], limit=limit)
 
     def fetch(url: str) -> dict[str, object]:
         if url != SOURCE:

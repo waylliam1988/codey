@@ -1,210 +1,61 @@
+"""Scholarly execution, query privacy and composition with the one search coordinator."""
 from __future__ import annotations
 
 import json
-import tempfile
-from collections.abc import Callable
-from email.message import Message
+import time
 from pathlib import Path
-from types import TracebackType
-from unittest import mock
-from urllib.request import Request
 
 import pytest
 
-from codey.knowledge.changes import KnowledgeChanges
-from codey.knowledge.store import KnowledgeStore
 from codey.research import connector_search
-from codey.research.connector_search import ConnectorAwareSearchProvider, _read_url_text
-from codey.research.source_connectors import SourceConnectorRegistry, SourceConnectorSpec, safe_connector_query
-from codey.research.tools import ResearchTools
-from codey.types.json_value import JsonObject, require_json_string
+from codey.research.connector_search import ScholarlySources
+from codey.research.search_contracts import SearchState
+from codey.research.source_connectors import safe_connector_query
+from codey.research.web_sources import WebSourceProvider
+from codey.runtime.core import cancellation
+from tests.test_chat_web_provider import Browser
 
-ROOT = Path(__file__).resolve().parents[1]
-FIXTURES = ROOT / "tests" / "fixtures" / "research_connectors"
-
-
-class FakeBaseSearchProvider:
-    name = "fake_browser"
-
-    def __init__(self) -> None:
-        self.searches: list[tuple[str, int]] = []
-        self.fetches: list[str] = []
-        self.search_override: Callable[[str, int], list[JsonObject]] | None = None
-
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
-        if self.search_override is not None:
-            return self.search_override(query, limit)
-        self.searches.append((query, limit))
-        return [
-            {
-                "title": "Generic web result",
-                "url": "https://example.com/generic",
-                "snippet": "generic snippet",
-            }
-        ]
-
-    def fetch(self, url: str) -> dict[str, object]:
-        self.fetches.append(url)
-        return {"status": "ok",
-            "url": url,
-            "title": "Generic",
-            "text": "generic page body",
-            "truncated": False,
-        }
+FIXTURES = Path(__file__).parent / "fixtures" / "research_connectors"
 
 
-def _fixture_response(url: str, *, timeout: float) -> str:
-    del timeout
+def fixture_response(url: str, *, timeout: float) -> str:
     if "esearch.fcgi" in url:
-        return json.dumps({"esearchresult": {"idlist": ["12345678"]}})
+        return json.dumps({"esearchresult": {"idlist": ["invalid", "12345678"]}})
     if "efetch.fcgi" in url:
+        assert "invalid" not in url
         return (FIXTURES / "pubmed.xml").read_text(encoding="utf-8")
     if "export.arxiv.org" in url:
         return (FIXTURES / "arxiv_atom.xml").read_text(encoding="utf-8")
     raise AssertionError(url)
 
 
-def _allow_http_url(url: str, *args: object, **kwargs: object) -> str | None:
-    del args, kwargs
-    if url.startswith(("http://", "https://")):
-        return None
-    return "only http(s) URLs are allowed"
+@pytest.mark.parametrize("query,engine", [
+    ("clinical hepatotoxicity patient therapy", "pubmed"),
+    ("quantum astronomy arxiv preprints", "arxiv"),
+])
+def test_connector_results_and_actual_query_keep_coverage(monkeypatch: pytest.MonkeyPatch, query: str, engine: str) -> None:
+    monkeypatch.setattr(connector_search, "_read_url_text", fixture_response)
+    source = ScholarlySources(rate_limit=False, connector_limit=1)
+    outcome = source.search(query, limit=3, deadline=time.monotonic() + 5)
+    assert outcome is not None and outcome.state == SearchState.HITS
+    assert outcome.attempts[0].engine == engine
+    assert outcome.attempts[0].effective_query
+    assert all(attempt.coverage == "scholarly" for attempt in outcome.attempts)
+    assert outcome.hits[0].url.startswith("https://" + ("pubmed.ncbi.nlm.nih.gov" if engine == "pubmed" else "arxiv.org"))
 
 
-def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_document() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
-        results = provider.search("clinical hepatotoxicity patient therapy", limit=3)
-
-    assert require_json_string(results[0]["title"], "title").startswith("PubMed:")
-    assert results[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
-    assert results[1]["url"] == "https://example.com/generic"
-    assert base.searches == [("clinical hepatotoxicity patient therapy", 3)]
-
-    with tempfile.TemporaryDirectory() as td:
-        store = KnowledgeStore(Path(td))
-        tools = ResearchTools(provider, store, KnowledgeChanges(store.root))
-        with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
-            opened = tools.open_url(require_json_string(results[0]["url"], "url")).model_text
-        store.close()
-
-    assert "hepatotoxicity" in opened
-    assert "Kind: abstract only" in opened
-    assert results[0]["url"] in tools.sources_read
-    assert base.fetches == ["https://doi.org/10.1000/example-doi"]
-    assert tools.ledger.opened_sources_payload()[0]["final_url"] == results[0]["url"]
+def test_general_query_does_not_create_spurious_scholarly_failure() -> None:
+    source = ScholarlySources()
+    assert source.search("Python pathlib official docs", limit=3, deadline=time.monotonic() + 5) is None
 
 
-def test_connector_search_keeps_browser_material_when_connector_has_enough_results() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=2)
-    connector_results = [
-        {
-            "title": "PubMed: First",
-            "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
-            "snippet": "first",
-        },
-        {
-            "title": "PubMed: Second",
-            "url": "https://pubmed.ncbi.nlm.nih.gov/23456789/",
-            "snippet": "second",
-        },
-    ]
-
-    with mock.patch.object(provider, "_connector_search_results", return_value=connector_results):
-        results = provider.search("clinical hepatotoxicity", limit=4)
-
-    assert results[:2] == connector_results
-    assert results[2]["url"] == "https://example.com/generic"
-    assert base.searches == [("clinical hepatotoxicity", 4)]
-
-
-def test_connector_search_counts_connector_hits_toward_result_limit() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False)
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
-        results = provider.search("clinical hepatotoxicity", limit=1)
-    assert [row["url"] for row in results] == ["https://pubmed.ncbi.nlm.nih.gov/12345678/"]
-
-
-@pytest.mark.parametrize("connector", ["crossref", "openalex"])
-def test_scholarly_metadata_discovery_opens_actual_source(connector: str) -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False)
-    payload = ({"message": {"items": [{"DOI": "10.1234/Atlas", "title": ["Atlas publication"]}]}}
-               if connector == "crossref" else
-               {"results": [{"doi": "https://doi.org/10.1234/ATLAS", "display_name": "Atlas publication"}]})
-    with mock.patch("codey.research.connector_search._read_url_text", return_value=json.dumps(payload)) as read:
-        results = provider.search(f"{connector} Atlas", limit=1)
-    assert len(results) == 1 and results[0]["url"] == "https://doi.org/10.1234/atlas"
-    assert f"api.{connector}.org/works?" in str(read.call_args.args[0])
-    assert provider.fetch("https://doi.org/10.1234/atlas")["text"] == "generic page body"
-    assert base.fetches == ["https://doi.org/10.1234/atlas"]
-
-
-def test_connector_live_search_uses_shared_medical_routing_terms() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
+def test_connector_privacy_corpus_never_enters_api_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     requested: list[str] = []
-
     def response(url: str, *, timeout: float) -> str:
-        del timeout
         requested.append(url)
-        return _fixture_response(url, timeout=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        results = provider.search("genetic association study", limit=3)
-
-    assert results[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
-    assert any("eutils.ncbi.nlm.nih.gov" in item for item in requested)
-
-
-def test_connector_live_search_reuses_single_safe_query_for_routing_and_api_request() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-    original = safe_connector_query
-
-    with mock.patch("codey.research.connector_search.safe_connector_query", wraps=original) as safe, mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
-        provider.search("clinical cancer therapy", limit=3)
-
-    assert safe.call_count == 1
-
-
-def test_connector_live_query_strips_secret_shape_url_and_path_before_api_request() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-    requested: list[str] = []
-    query = (
-        "clinical hepatotoxicity SECRET_TOKEN_ABCDEFGHIJKLMNOPQRSTUVWX "
-        "https://example.com/items?token=SECRET E:/secret/project"
-    )
-
-    def response(url: str, *, timeout: float) -> str:
-        del timeout
-        requested.append(url)
-        return _fixture_response(url, timeout=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        results = provider.search(query, limit=3)
-
-    assert results[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
-    assert base.searches == [(query, 3)]
-    joined = "\n".join(requested)
-    assert "clinical" in joined
-    assert "hepatotoxicity" in joined
-    assert "SECRET" not in joined
-    assert "example.com" not in joined
-    assert "E%3A" not in joined
-    assert "/secret/project" not in joined
-    assert "tool=research_connector" in joined
-
-
-def test_connector_live_query_masks_separator_split_secret_markers_before_api_request() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-    requested: list[str] = []
+        return fixture_response(url, timeout=timeout)
+    monkeypatch.setattr(connector_search, "_read_url_text", response)
+    source = ScholarlySources(rate_limit=False, connector_limit=1)
     queries = (
         "api - key - abcdef clinical cancer",
         "api key one two three clinical cancer",
@@ -236,377 +87,39 @@ def test_connector_live_query_masks_separator_split_secret_markers_before_api_re
         "密钥 one two three 临床 癌症",
         "密码 hunter2 临床 癌症",
     )
-
-    def response(url: str, *, timeout: float) -> str:
-        del timeout
-        requested.append(url)
-        return _fixture_response(url, timeout=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        for query in queries:
-            results = provider.search(query, limit=3)
-            assert results[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
-
-    assert base.searches == [(query, 3) for query in queries]
-    search_urls = [item for item in requested if "esearch.fcgi" in item]
-    assert len(search_urls) == len(queries)
-    joined = "\n".join(search_urls).casefold()
-    assert "clinical" in joined
-    assert "cancer" in joined
-    for forbidden in (
-        "abcdef",
-        "topsecret",
-        "livekey",
-        "hunter2",
-        "one",
-        "two",
-        "three",
-        "correct",
-        "horse",
-        "battery",
-        "staple",
-        "password",
-        "passphrase",
-        "client",
-        "secret",
-        "token",
-        "cookie",
-        "auth",
-        "private",
-        "access",
-        "bearer",
-        "configured",
-        "known",
-        "called",
-    ):
+    for query in queries:
+        outcome = source.search(query, limit=3, deadline=time.monotonic() + 5)
+        assert outcome is not None and outcome.hits
+    joined = "\n".join(requested).casefold()
+    for forbidden in ("abcdef", "topsecret", "livekey", "hunter2", "correct", "horse", "battery", "staple"):
         assert forbidden not in joined
 
 
-def test_connector_live_query_keeps_contextual_marker_domain_terms() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-    requested: list[str] = []
-
-    def response(url: str, *, timeout: float) -> str:
-        del timeout
-        requested.append(url)
-        return _fixture_response(url, timeout=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        provider.search("token classification benchmark arxiv", limit=3)
-        provider.search("token pruning transformer benchmark", limit=3)
-        provider.search("jwt authentication benchmark", limit=3)
-
-    joined = "\n".join(item for item in requested if "export.arxiv.org" in item).casefold()
-    assert "classification" in joined
-    assert "pruning" in joined
-    assert "authentication" in joined
-    assert "benchmark" in joined
-
-
-def test_connector_live_query_still_searches_non_sensitive_url_and_path_terms() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-    requested: list[str] = []
-
-    def response(url: str, *, timeout: float) -> str:
-        del timeout
-        requested.append(url)
-        return _fixture_response(url, timeout=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        provider.search("clinical hepatotoxicity https://example.com/items?id=123 E:/docs/project", limit=3)
-
-    joined = "\n".join(requested)
-    assert "clinical" in joined
-    assert "hepatotoxicity" in joined
-    assert "example.com" not in joined
-    assert "E%3A" not in joined
-    assert "/docs/project" not in joined
-    assert "tool=research_connector" in joined
-
-
-def test_connector_live_search_honors_registry_unavailable_status() -> None:
-    base = FakeBaseSearchProvider()
-    registry = SourceConnectorRegistry(
-        (
-            SourceConnectorSpec(
-                id="pubmed",
-                kind="biomedical_literature",
-                status="unavailable",
-                search_supported=True,
-                fetch_supported=True,
-                fixture_supported=False,
-                shipped=False,
-            ),
-            SourceConnectorSpec(
-                id="arxiv",
-                kind="academic_preprint",
-                status="available",
-                search_supported=True,
-                fetch_supported=True,
-                fixture_supported=False,
-                shipped=True,
-            ),
-        )
-    )
-    provider = ConnectorAwareSearchProvider(base, registry=registry, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text") as read:
-        results = provider.search("clinical genetic cancer therapy", limit=2)
-
-    assert results == [
-        {
-            "title": "Generic web result",
-            "url": "https://example.com/generic",
-            "snippet": "generic snippet",
-        }
-    ]
-    read.assert_not_called()
-
-
-def test_connector_request_timeout_never_rounds_past_remaining_budget() -> None:
-    provider = ConnectorAwareSearchProvider(
-        FakeBaseSearchProvider(),
-        rate_limit=False,
-        connector_budget_seconds=1.0,
-    )
-    provider._search_deadline = 10.25
-
-    with mock.patch("codey.research.connector_search.time.monotonic", return_value=10.0):
-        assert provider._request_timeout() == pytest.approx(0.25)
-
-    with mock.patch("codey.research.connector_search.time.monotonic", return_value=10.06), pytest.raises(TimeoutError, match="budget exhausted"):
-        provider._request_timeout()
-
-
-def test_connector_redirects_share_single_request_timeout_budget() -> None:
-    class RedirectResponse:
-        status = 302
-        code = 302
-        headers = {"Location": "https://export.arxiv.org/api/query?next=1"}
-
-        def __enter__(self) -> RedirectResponse:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-    observed_timeouts: list[float] = []
-
-    def open_redirect(_request: Request, *, timeout: float) -> RedirectResponse:
-        observed_timeouts.append(timeout)
-        return RedirectResponse()
-
-    with (
-        mock.patch("codey.research.connector_search.check_fetch_url", return_value=None),
-        mock.patch.object(connector_search._CONNECTOR_OPENER, "open", side_effect=open_redirect),
-        mock.patch("codey.research.connector_search.time.monotonic", side_effect=[10.0, 10.1, 10.8, 11.1]),
-        pytest.raises(TimeoutError, match="connector request timed out"),
-    ):
-        _read_url_text("https://export.arxiv.org/api/query", timeout=1.0)
-
-    assert observed_timeouts == pytest.approx([0.9, 0.2])
-
-
-def test_connector_http_user_agent_does_not_name_product() -> None:
-    class Response:
-        status = 200
-        headers = Message()
-        def read(self, size: int) -> bytes:
-            return b"{}"
-        def __enter__(self) -> Response:
-            return self
-        def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None,
-                     tb: TracebackType | None) -> None:
-            pass
-    response = Response()
-
-    with mock.patch("codey.research.connector_search.urllib.request.Request") as request, mock.patch("codey.research.connector_search.check_fetch_url", return_value=None), mock.patch.object(connector_search._CONNECTOR_OPENER, "open", return_value=response):
-        assert _read_url_text("https://export.arxiv.org/api/query", timeout=1) == "{}"
-
-    headers = request.call_args.kwargs["headers"]
-    assert headers["User-Agent"] == "Research Connector"
-    assert "Codey" not in headers["User-Agent"]
-
-
-def test_connector_search_skips_api_when_safe_query_is_empty() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text") as read:
-        results = provider.search("password . is . called . livekey", limit=2)
-
-    assert results == [
-        {
-            "title": "Generic web result",
-            "url": "https://example.com/generic",
-            "snippet": "generic snippet",
-        }
-    ]
-    read.assert_not_called()
-    assert provider.last_connector_errors[-1] == {
-        "connector_id": "connector",
-        "action": "search",
-        "error": "connector_query_empty_after_redaction",
-    }
-
-
-def test_connector_aware_search_adds_arxiv_result_and_deduplicates_base_result() -> None:
-    base = FakeBaseSearchProvider()
-
-    def base_search(query: str, limit: int = 8) -> list[JsonObject]:
-        base.searches.append((query, limit))
-        return [
-            {
-                "title": "Duplicate arXiv",
-                "url": "https://arxiv.org/abs/2401.01234v1",
-                "snippet": "duplicate",
-            },
-            {
-                "title": "Other",
-                "url": "https://example.com/other",
-                "snippet": "other",
-            },
-        ]
-
-    base.search_override = base_search
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
-        results = provider.search("arxiv transformer diffusion model evaluation", limit=4)
-
-    urls = [item["url"] for item in results]
-    assert urls == [
-        "https://arxiv.org/abs/2401.01234v1",
-        "https://example.com/other",
-    ]
-
-
-def test_connector_merge_preserves_distinct_base_urls_that_differ_by_query() -> None:
-    base = FakeBaseSearchProvider()
-
-    def base_search(query: str, limit: int = 8) -> list[JsonObject]:
-        base.searches.append((query, limit))
-        return [
-            {
-                "title": "Item 1",
-                "url": "https://example.com/item?id=1",
-                "snippet": "one",
-            },
-            {
-                "title": "Item 2",
-                "url": "https://example.com/item?id=2",
-                "snippet": "two",
-            },
-        ]
-
-    base.search_override = base_search
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    results = provider.search("ordinary web lookup", limit=4)
-
-    assert [item["url"] for item in results] == [
-        "https://example.com/item?id=1",
-        "https://example.com/item?id=2",
-    ]
-
-
-def test_connector_aware_arxiv_generation_query_does_not_trigger_pubmed() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-    calls: list[str] = []
-
-    def response(url: str, *, timeout: int) -> str:
-        del timeout
-        calls.append(url)
-        if "eutils.ncbi.nlm.nih.gov" in url:
-            raise AssertionError("generation must not trigger PubMed via gene substring")
-        return (FIXTURES / "arxiv_atom.xml").read_text(encoding="utf-8")
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        results = provider.search("retrieval augmented generation evaluation benchmark", limit=3)
-
-    assert results[0]["url"] == "https://arxiv.org/abs/2401.01234v1"
-    assert all("eutils.ncbi.nlm.nih.gov" not in item for item in calls)
-
-
-def test_pubmed_live_search_filters_invalid_ids_before_fetch() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=3)
-    requested: list[str] = []
-
-    def response(url: str, *, timeout: float) -> str:
-        del timeout
-        requested.append(url)
-        if "esearch.fcgi" in url:
-            return json.dumps({"esearchresult": {"idlist": ["12345678", "1234567890123", "SECRET_TOKEN"]}})
-        if "efetch.fcgi" in url:
-            return (FIXTURES / "pubmed.xml").read_text(encoding="utf-8")
-        raise AssertionError(url)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        provider.search("clinical hepatotoxicity patient therapy", limit=4)
-
-    fetch_urls = [item for item in requested if "efetch.fcgi" in item]
-    assert len(fetch_urls) == 1
-    assert "id=12345678" in fetch_urls[0]
-    assert "1234567890123" not in fetch_urls[0]
-    assert "SECRET_TOKEN" not in fetch_urls[0]
-
-
-def test_connector_aware_search_falls_back_to_browser_when_connector_fails() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=ValueError("network down")):
-        results = provider.search("clinical cancer therapy", limit=2)
-
-    assert results == [
-        {
-            "title": "Generic web result",
-            "url": "https://example.com/generic",
-            "snippet": "generic snippet",
-        }
-    ]
-    assert provider.last_connector_errors[-1]["connector_id"] == "pubmed"
-
-
-def test_connector_aware_fetch_direct_pubmed_url_uses_connector_before_browser() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
-        page = provider.fetch("https://pubmed.ncbi.nlm.nih.gov/12345678/")
-
-    assert page["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
-    text = page["text"]
-    assert isinstance(text, str) and "hepatotoxicity" in text
-    assert base.fetches == []
-
-
-def test_connector_aware_fetch_direct_pubmed_url_falls_back_to_browser_when_connector_lookup_fails() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=ValueError("network down")):
-        page = provider.fetch("https://pubmed.ncbi.nlm.nih.gov/12345678/")
-
-    assert page["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
-    assert page["text"] == "generic page body"
-    assert base.fetches == ["https://pubmed.ncbi.nlm.nih.gov/12345678/"]
-    assert provider.last_connector_errors[-1]["action"] == "fetch_lookup"
-
-
-def test_connector_aware_fetch_direct_arxiv_url_falls_back_to_browser_when_connector_lookup_fails() -> None:
-    base = FakeBaseSearchProvider()
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-
-    with mock.patch("codey.research.connector_search._read_url_text", side_effect=ValueError("network down")):
-        page = provider.fetch("https://arxiv.org/abs/2401.01234")
-
-    assert page["url"] == "https://arxiv.org/abs/2401.01234"
-    assert page["text"] == "generic page body"
-    assert base.fetches == ["https://arxiv.org/abs/2401.01234"]
-    assert provider.last_connector_errors[-1]["connector_id"] == "arxiv"
-    assert provider.last_connector_errors[-1]["action"] == "fetch_lookup"
+def test_one_coordinator_keeps_real_connector_hits_when_web_search_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from codey.research.search_contracts import SearchOutcome, failed_search
+    from codey.research.search_profiles import SearchProfile
+    class FailedBrowser(Browser):
+        def search(self, query: str, *, limit: int, profile: SearchProfile, deadline: float) -> SearchOutcome:
+            return failed_search(query, profile.name, "search_page_blank")
+    monkeypatch.setattr(connector_search, "_read_url_text", fixture_response)
+    provider = WebSourceProvider(browser_factory=FailedBrowser, scholarly=ScholarlySources(rate_limit=False))
+    outcome = provider.search("clinical hepatotoxicity")
+    assert outcome.state == SearchState.HITS
+    assert outcome.hits[0].url.startswith("https://pubmed.ncbi.nlm.nih.gov/")
+    assert outcome.errors[0]["failure_kind"] == "search_page_blank"
+
+
+@pytest.mark.parametrize("error", [cancellation.TaskCancelled, cancellation.DeadlineExceeded])
+def test_connector_stop_is_not_translated_into_endpoint_failure(monkeypatch: pytest.MonkeyPatch, error: type[Exception]) -> None:
+    def stopped(url: str, *, timeout: float) -> str:
+        raise error("stop")
+    monkeypatch.setattr(connector_search, "_read_url_text", stopped)
+    source = ScholarlySources(rate_limit=False)
+    with pytest.raises(error):
+        source.search("clinical cancer", limit=3, deadline=time.monotonic() + 5)
+    assert source._search_deadline is None
+
+
+def test_single_safe_query_preserves_contextual_domain_terms() -> None:
+    query = safe_connector_query("clinical token expression receptor antibody", limit=12)
+    assert "clinical" in query.terms

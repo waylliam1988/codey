@@ -2,7 +2,7 @@
 
 The probe runs the shared research entry through a test-only adapter against live web providers. The
 baseline arm uses the browser search provider directly; the connector arm wraps
-it with ConnectorAwareSearchProvider. Progress is written atomically after each
+it with the production scholarly-source composition. Progress is written atomically after each
 case/arm row so missing samples can be resumed without rerunning completed
 provider traffic. An optional durable observation journal (`<stem>.trace/`)
 records each prompt/reply pair as hash-chained JSONL events. It stores
@@ -17,9 +17,9 @@ import json
 import sys
 import tempfile
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 if __package__ in (None, ""):
@@ -30,10 +30,13 @@ import contextlib
 from codey.knowledge.store import KnowledgeStore
 from codey.protocols.json_scanner import extract_json_objects
 from codey.providers import controls as provider_controls
+from codey.providers.base import ChatProvider
+from codey.providers.diagnostics import ProviderFailure
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.browser_search import BrowserSearchProvider
-from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.connector_search import ScholarlySources
 from codey.research.proof_quality import review_research_proof
+from codey.utils.refs import coerce_int
 from tests.manual.ab_harness_common import (
     attach_research_record_payload,
     row_has_terminal_failure,
@@ -99,25 +102,25 @@ CASES = {
 
 
 class TimedProvider:
-    def __init__(self, provider, *, send_timeout: float, new_chat_timeout: float) -> None:
+    def __init__(self, provider: ChatProvider, *, send_timeout: float, new_chat_timeout: float) -> None:
         self.provider = provider
         self.send_timeout = max(1.0, float(send_timeout))
         self.new_chat_timeout = max(1.0, float(new_chat_timeout))
-        self.name = getattr(provider, "name", "")
-        self.location = getattr(provider, "location", "")
+        self.name = provider.name
+        self.location = provider.location
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> object:
         return getattr(self.provider, name)
 
-    def new_chat(self, timeout=None) -> None:
+    def new_chat(self, timeout: float | None = None) -> None:
         effective = self.new_chat_timeout if timeout is None else timeout
         return self.provider.new_chat(timeout=effective)
 
-    def send(self, text: str, timeout=None) -> str:
+    def send(self, text: str, timeout: float | None = None) -> str:
         effective = self.send_timeout if timeout is None else timeout
         return self.provider.send(text, timeout=effective)
 
-    def close(self) -> None:
+    def close(self) -> None | bool:
         return self.provider.close()
 
 
@@ -132,7 +135,7 @@ class OutputProviderMismatch(ValueError):
 class TracingProvider:
     def __init__(
         self,
-        provider,
+        provider: ChatProvider,
         *,
         trace: ABJournalWriter,
         run_id: str,
@@ -149,17 +152,17 @@ class TracingProvider:
         self.case = case
         self.arm = arm
         self.send_index = 0
-        self.name = getattr(provider, "name", "")
-        self.location = getattr(provider, "location", "")
+        self.name = provider.name
+        self.location = provider.location
         self.thread_safe_send = getattr(provider, "thread_safe_send", False)
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> object:
         return getattr(self.provider, name)
 
-    def new_chat(self, timeout=None) -> None:
+    def new_chat(self, timeout: float | None = None) -> None:
         return self.provider.new_chat(timeout=timeout)
 
-    def send(self, text: str, timeout=None) -> str:
+    def send(self, text: str, timeout: float | None = None) -> str:
         self.send_index += 1
         turn = self.send_index
         self.trace.record_send_start(
@@ -189,12 +192,12 @@ class TracingProvider:
         )
         return reply
 
-    def close(self) -> None:
+    def close(self) -> None | bool:
         return self.provider.close()
 
 
 def run_case(
-    provider,
+    provider: ChatProvider,
     *,
     provider_id: str,
     case: Case,
@@ -202,10 +205,10 @@ def run_case(
     max_turns: int,
     run_id: str,
     trace: ABJournalWriter | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     started = time.time()
-    tool_calls: list[dict[str, Any]] = []
-    model_actions: list[dict[str, Any]] = []
+    tool_calls: list[dict[str, object]] = []
+    model_actions: list[dict[str, object]] = []
     infos: list[str] = []
     provider_name = str(getattr(provider, "name", "") or "")
     with tempfile.TemporaryDirectory(prefix="codey-source-connector-ab-") as td:
@@ -238,12 +241,9 @@ def run_case(
                 project="",
                 run_id=run_id,
             )
-            for event in runner.run(case.question):
-                # The current ResearchIteration adapter yields the final
-                # ResearchRunResult; older probes yielded event envelopes.
-                # Keep the live harness compatible with both shapes.
-                if not hasattr(event, "kind"):
-                    continue
+            for _ in runner.run(case.question):
+                pass
+            for event in runner.events:
                 if event.kind == "turn":
                     model_actions.extend(_safe_model_actions(event.turn, event.reply)[:3])
                 if event.kind == "info":
@@ -279,8 +279,8 @@ def run_case(
                 "opened_target_host": _opened_target_host(result.source_urls, case.target_hosts),
                 "evidence_count": len(result.evidence_items),
                 "notes_created": len(result.notes_created),
-                "connector_errors": list(getattr(search, "last_connector_errors", []))[:8],
-                "search_failures": list(getattr(search, "last_search_failures", []))[:8],
+                "connector_errors": _connector_errors(search)[:8],
+                "search_failures": search.last_search_errors[:8],
                 "proof_ok": bool(proof.ok) if proof is not None else False,
                 "proof_answer_status": proof.answer_status if proof is not None else "",
                 "proof_missing_evidence": list(proof.missing_evidence[:8]) if proof is not None else [],
@@ -293,7 +293,7 @@ def run_case(
                 ),
                 "used_legacy_open_url_id_action": any(
                     item.get("tool") == "open_url"
-                    and any(key in item.get("args", {}) for key in ("result_id", "source_id", "hit_id"))
+                    and any(key in _fields(item.get("args")) for key in ("result_id", "source_id", "hit_id"))
                     for item in model_actions
                 ),
                 "tool_calls": tool_calls[:40],
@@ -327,15 +327,38 @@ def run_case(
             store.close()
 
 
-def _search_provider_for_arm(arm: str):
+def _search_provider_for_arm(arm: str) -> BrowserSearchProvider:
     base = BrowserSearchProvider(isolated=False, bring_to_front=False)
     if arm == "connector":
-        return ConnectorAwareSearchProvider(base)
+        base.scholarly = ScholarlySources()
+        return base
     return base
 
 
-def _safe_args(args: dict[str, Any]) -> dict[str, Any]:
-    safe: dict[str, Any] = {}
+def _connector_errors(provider: BrowserSearchProvider) -> list[str]:
+    outcome = provider.last_outcome
+    return ([attempt.detail or attempt.failure_kind for attempt in outcome.attempts
+             if attempt.coverage == "scholarly" and attempt.failure_kind] if outcome is not None else [])
+
+
+def _fields(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError("expected an object")
+    fields: Mapping[object, object] = value
+    if any(not isinstance(key, str) for key in fields):
+        raise ValueError("expected string keys")
+    return {key: item for key, item in fields.items() if isinstance(key, str)}
+
+
+def _rows(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        raise ValueError("expected rows array")
+    items: Sequence[object] = value
+    return [_fields(item) for item in items]
+
+
+def _safe_args(args: Mapping[str, object]) -> dict[str, object]:
+    safe: dict[str, object] = {}
     for key, value in args.items():
         if key in {"query", "url", "source_id", "result_id", "hit_id", "pages", "type", "title"}:
             safe[str(key)] = _clip(value, 240)
@@ -344,8 +367,8 @@ def _safe_args(args: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-def _safe_model_actions(turn: int, reply: str) -> list[dict[str, Any]]:
-    actions: list[dict[str, Any]] = []
+def _safe_model_actions(turn: int, reply: str) -> list[dict[str, object]]:
+    actions: list[dict[str, object]] = []
     for obj in extract_json_objects(reply or ""):
         tool = str(obj.get("tool") or "").strip().lower()
         args = obj.get("args")
@@ -382,28 +405,29 @@ def _expected_terms_present(summary: str, expected_terms: tuple[str, ...]) -> bo
     return all(term.casefold() in text for term in expected_terms)
 
 
-def _score_row(row: dict[str, Any]) -> int:
+def _score_row(row: dict[str, object]) -> int:
     return (
         (3 if row.get("stop_reason") == "done" else 0)
         + (3 if row.get("opened_target_host") else 0)
-        + (2 if int(row.get("evidence_count") or 0) > 0 else 0)
+        + (2 if coerce_int(row.get("evidence_count")) > 0 else 0)
         + (2 if row.get("proof_ok") else 0)
         + (1 if row.get("expected_terms_present") else 0)
     )
 
 
-def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    summary: dict[str, Any] = {"rows": len(rows), "by_case": {}}
+def summarize(rows: list[dict[str, object]]) -> dict[str, object]:
+    by_case: dict[str, object] = {}
+    summary: dict[str, object] = {"rows": len(rows), "by_case": by_case}
     for case in sorted({str(row.get("case") or "") for row in rows if row.get("case")}):
         case_rows = [row for row in rows if row.get("case") == case]
         arms = {str(row.get("arm") or ""): row for row in case_rows}
         baseline = arms.get("baseline", {})
         connector = arms.get("connector", {})
-        summary["by_case"][case] = {
+        by_case[case] = {
             "baseline_score": baseline.get("score"),
             "connector_score": connector.get("score"),
             "delta": (
-                int(connector.get("score") or 0) - int(baseline.get("score") or 0) if baseline and connector else None
+                coerce_int(connector.get("score")) - coerce_int(baseline.get("score")) if baseline and connector else None
             ),
             "connector_opened_target_host": bool(connector.get("opened_target_host")),
             "connector_proof_ok": bool(connector.get("proof_ok")),
@@ -425,7 +449,7 @@ def run_provider(
     rerun_failed: bool,
     trace: ABJournalWriter | None,
     run_id: str,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     try:
         payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms)
     except OutputProviderMismatch as exc:
@@ -441,10 +465,12 @@ def run_provider(
                 },
             )
         raise
+    rows = _rows(payload.get("rows"))
+    payload["rows"] = rows
     payload["trace_output"] = str(trace.directory) if trace is not None else ""
     existing = {
         (str(row.get("case") or ""), str(row.get("arm") or ""))
-        for row in payload["rows"]
+        for row in rows
         if not (rerun_failed and row_has_terminal_failure(row))
     }
     pending = _pending_case_keys(cases=cases, arms=arms, existing=existing)
@@ -464,10 +490,10 @@ def run_provider(
                     "cases": [case.name for case in cases],
                     "arms": list(arms),
                     "rerun_failed": bool(rerun_failed),
-                    "existing_rows": len(payload["rows"]),
+                    "existing_rows": len(rows),
                 },
             )
-            trace.record_run_complete(rows=len(payload["rows"]))
+            trace.record_run_complete(rows=len(rows))
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case.name for case in cases)} "
             f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
@@ -501,8 +527,8 @@ def run_provider(
                     run_id=run_id,
                     trace=trace,
                 )
-                upsert_case_row(payload["rows"], row, provider_id=provider_id)
-                payload["summary"] = summarize(payload["rows"])
+                upsert_case_row(rows, row, provider_id=provider_id)
+                payload["summary"] = summarize(rows)
                 payload["updated_at"] = _timestamp()
                 _write_payload(output, payload)
                 print(
@@ -511,11 +537,11 @@ def run_provider(
                     flush=True,
                 )
         payload["complete"] = True
-        payload["summary"] = summarize(payload["rows"])
+        payload["summary"] = summarize(rows)
         payload["updated_at"] = _timestamp()
         _write_payload(output, payload)
         if trace is not None:
-            trace.record_run_complete(rows=len(payload["rows"]))
+            trace.record_run_complete(rows=len(rows))
         return payload
     finally:
         provider_controls.end_task_context()
@@ -526,10 +552,10 @@ def run_provider(
 
 def _load_or_new_payload(
     output: Path, *, provider_id: str, cases: tuple[Case, ...], arms: tuple[str, ...]
-) -> dict[str, Any]:
+) -> dict[str, object]:
     if output.exists():
         try:
-            payload = json.loads(output.read_text(encoding="utf-8"))
+            payload = _fields(json.loads(output.read_text(encoding="utf-8")))
             if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
                 _ensure_payload_provider(payload, provider_id=provider_id, output=output)
                 payload["complete"] = False
@@ -550,7 +576,7 @@ def _load_or_new_payload(
     }
 
 
-def _ensure_payload_provider(payload: dict[str, Any], *, provider_id: str, output: Path) -> None:
+def _ensure_payload_provider(payload: dict[str, object], *, provider_id: str, output: Path) -> None:
     found = str(payload.get("provider") or "").strip().lower()
     expected = str(provider_id or "").strip().lower()
     if found and expected and found != expected:
@@ -566,22 +592,12 @@ def _pending_case_keys(
     return [(case.name, arm) for case in cases for arm in arms if (case.name, arm) not in existing]
 
 
-def _detach_search_provider(provider: object) -> None:
-    """Release manual probe references without blocking on browser-thread close."""
-    current = provider
-    seen: set[int] = set()
-    for _ in range(6):
-        if current is None or id(current) in seen:
-            return
-        seen.add(id(current))
-        for name in ("_fetch_page", "_search_page", "_session"):
-            if hasattr(current, name):
-                with contextlib.suppress(Exception):
-                    setattr(current, name, None)
-        current = getattr(current, "base_provider", None)
+def _detach_search_provider(provider: BrowserSearchProvider) -> None:
+    """Finish the shared runtime's owned-resource cleanup before dropping probe references."""
+    provider.close()
 
 
-def _provider_failure_payload(provider: object) -> dict[str, Any]:
+def _provider_failure_payload(provider: object) -> dict[str, object]:
     current = provider
     seen: set[int] = set()
     for _ in range(6):
@@ -589,25 +605,20 @@ def _provider_failure_payload(provider: object) -> dict[str, Any]:
             break
         seen.add(id(current))
         failure = getattr(current, "last_failure", None)
-        if failure is not None:
-            try:
-                payload = failure.to_dict()
-            except Exception:
-                payload = {}
-            if isinstance(payload, dict):
-                return payload
+        if isinstance(failure, ProviderFailure):
+            return _fields(failure.to_dict())
         current = getattr(current, "provider", None)
     return {}
 
 
-def _write_payload(path: Path, payload: dict[str, Any]) -> None:
+def _write_payload(path: Path, payload: dict[str, object]) -> None:
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     if len(text.encode("utf-8")) > MAX_RESULT_BYTES:
         raise ValueError("source connector A/B result exceeded bounded size")
     _write_json_atomic(path, payload)
 
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -641,7 +652,7 @@ def _timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
-def _parse_names(raw: list[str] | None, choices: dict[str, Any] | tuple[str, ...], label: str) -> tuple[str, ...]:
+def _parse_names(raw: list[str] | None, choices: Mapping[str, object] | tuple[str, ...], label: str) -> tuple[str, ...]:
     if not raw:
         return tuple(choices)
     known = set(choices)
@@ -664,7 +675,7 @@ def _self_test() -> None:
         {"case": "pubmed", "arm": "connector", "score": 9, "opened_target_host": True, "proof_ok": True},
     ]
     summary = summarize(rows)
-    assert summary["by_case"]["pubmed"]["delta"] == 5
+    assert _fields(_fields(summary["by_case"])["pubmed"])["delta"] == 5
     assert _opened_target_host(["https://pubmed.ncbi.nlm.nih.gov/123/"], ("pubmed.ncbi.nlm.nih.gov",))
     assert _expected_terms_present("Retrieval augmented generation", ("retrieval", "generation"))
     assert (
@@ -681,26 +692,6 @@ def _self_test() -> None:
         == []
     )
 
-    class FakeSearch:
-        def __init__(self) -> None:
-            self.closed = False
-            self._session = object()
-            self._search_page = object()
-            self._fetch_page = object()
-
-        def close(self) -> None:
-            self.closed = True
-
-    class FakeConnector:
-        def __init__(self) -> None:
-            self.base_provider = FakeSearch()
-
-    fake = FakeConnector()
-    _detach_search_provider(fake)
-    assert not fake.base_provider.closed
-    assert fake.base_provider._session is None
-    assert fake.base_provider._search_page is None
-    assert fake.base_provider._fetch_page is None
     with tempfile.TemporaryDirectory(prefix="codey-source-connector-ab-self-") as td:
         trace_dir = journal_directory_for(Path(td) / "trace.json")
         trace = ABJournalWriter(
@@ -750,13 +741,13 @@ def _self_test() -> None:
         assert reader.verify_hash_chain() == []
         assert reader.completed_case_keys() == [("pubmed", "baseline")]
         send_error = events[3]
-        assert send_error["facts"]["provider_failure_kind"] == "timeout"
-        assert send_error["facts"]["provider_failure_stage"] == "wait_reply"
-        manifest = json.loads((trace_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert _fields(send_error["facts"])["provider_failure_kind"] == "timeout"
+        assert _fields(send_error["facts"])["provider_failure_stage"] == "wait_reply"
+        manifest = _fields(json.loads((trace_dir / "manifest.json").read_text(encoding="utf-8")))
         assert manifest["experiment_id"] == "source_connector_ab"
         transcript_files = sorted((trace_dir / "transcripts").glob("*.json"))
         assert transcript_files
-        transcript = json.loads(transcript_files[0].read_text(encoding="utf-8"))
+        transcript = _fields(json.loads(transcript_files[0].read_text(encoding="utf-8")))
         assert transcript["kind"] == "ab_transcript"
         assert _journal_transcript_mode("digest-only") == TRANSCRIPT_MODE_DIGEST_ONLY
         assert _journal_transcript_mode("archive") == TRANSCRIPT_MODE_ARCHIVE

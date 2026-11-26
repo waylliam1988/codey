@@ -13,10 +13,12 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.proof_quality import CoverageGap, ResearchProofReview
 from codey.research.report_quality import review_report_quality
 from codey.research.run_result import ResearchRunResult
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
+from tests.support.search_fixture import search_outcome
 
 
-def _allow_policy():
+def _allow_policy() -> object:
     # 管线 mechanics 测试：显式传入允许读写的父策略（生产恒有 entry policy）。
     from codey.policies.task_policy import TaskPolicy
 
@@ -29,33 +31,33 @@ class _TraceRecorder:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple, dict]] = []
 
-    def __getattr__(self, name: str):
-        def call(*args, **kwargs) -> None:
+    def __getattr__(self, name: str) -> object:
+        def call(*args: object, **kwargs: object) -> None:
             self.calls.append((name, args, kwargs))
         return call
 
-    def record_permission_profile(self, *args, **kwargs) -> None:
+    def record_permission_profile(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_permission_profile", args, kwargs))
 
-    def record_research_notes(self, *args, **kwargs) -> None:
+    def record_research_notes(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_notes", args, kwargs))
 
-    def record_research_sources(self, *args, **kwargs) -> None:
+    def record_research_sources(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_sources", args, kwargs))
 
-    def record_research_record_summary(self, *args, **kwargs) -> None:
+    def record_research_record_summary(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_record_summary", args, kwargs))
 
-    def record_research_plan(self, *args, **kwargs) -> None:
+    def record_research_plan(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_plan", args, kwargs))
 
-    def record_research_pipeline_result(self, *args, **kwargs) -> None:
+    def record_research_pipeline_result(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_pipeline_result", args, kwargs))
 
-    def record_research_proof_review(self, *args, **kwargs) -> None:
+    def record_research_proof_review(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_proof_review", args, kwargs))
 
-    def record_evidence_ledger_write(self, *args, **kwargs) -> None:
+    def record_evidence_ledger_write(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_evidence_ledger_write", args, kwargs))
 
     def flush(self) -> None:
@@ -66,8 +68,8 @@ class _PipelineSearch:
     def __init__(self) -> None:
         self.closed = False
 
-    def search(self, *_args, **_kwargs) -> list[dict]:
-        return []
+    def search(self, query: str, *, limit: int = 8) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict:
         return {"status": "ok",
@@ -168,7 +170,7 @@ def _result(
     summary: str,
     stop_reason: str,
     synthesis_id: str,
-    record,
+    record: object,
     tools: ResearchTools,
     notes: list[str] | None = None,
 ) -> ResearchIterationRun:
@@ -390,7 +392,7 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
         original_write = target_store.write_note
         call_count = [0]
 
-        def flaky_write_note(note, *, changes=None):
+        def flaky_write_note(note: object, *, changes: object=None) -> object:
             call_count[0] += 1
             if call_count[0] == 3:
                 raise OSError("Disk full on third note")
@@ -481,7 +483,7 @@ def test_staged_knowledge_store_rollback_restores_links_after_link_failure() -> 
         )
         original_link = store.link
 
-        def fail_after_link(src, dst, kind="relates", *, changes=None):
+        def fail_after_link(src: object, dst: object, kind: str="relates", *, changes: object=None) -> None:
             result = original_link(src, dst, kind, changes=changes)
             assert result.ok is True
             raise OSError("link failed after side effect")

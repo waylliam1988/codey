@@ -31,13 +31,12 @@ from playwright.async_api import (
     Frame,
     Page,
     Playwright,
-    Route,
     async_playwright,
 )
 
+from codey.automation.browser import CONTROLLED_BROWSER_FLAGS
 from codey.automation.browser_binding import BrowserBinding, PageBinding, browser_endpoint, browser_identity
 from codey.automation.browser_contracts import (
-    MAX_PENDING_COMMANDS,
     BrowserAction,
     BrowserCommand,
     BrowserCompletion,
@@ -50,6 +49,7 @@ from codey.automation.browser_images import MAX_IMAGE_PIXELS, annotate_capture, 
 from codey.automation.browser_input import _HIT_TEST
 from codey.automation.browser_ipc import BrowserPacket
 from codey.automation.browser_native_input import NativeInput
+from codey.automation.browser_network import BrowserNetwork, NetworkPolicy
 from codey.automation.browser_observation import VISIBLE_TEXT
 from codey.automation.browser_query import QueryObservationError, changed_query_region
 from codey.automation.browser_query_async import bind_query_target
@@ -76,7 +76,6 @@ from codey.types.json_value import (
     require_json_strings,
 )
 
-NetworkPolicy = Callable[[JsonObject], Awaitable[JsonObject]]
 Progress = Callable[[JsonObject], Awaitable[None]]
 _PROPERTY_RETURN = re.compile(r"\s*return[ \t]+(window\.[A-Za-z_$][\w$]*)(?:\s*;)?\s*", re.ASCII)
 
@@ -114,7 +113,8 @@ class BrowserRuntime:
     def __init__(self, config: BrowserConfig, *, network_policy: NetworkPolicy | None = None,
                  progress: Progress | None = None, binding: BrowserBinding | None = None,
                  inputs: JsonObject | None = None) -> None:
-        self.config, self.network_policy, self.progress = config, network_policy, progress
+        self.config, self.progress = config, progress
+        self._network = BrowserNetwork(network_policy)
         self._resume_binding = binding
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
@@ -129,52 +129,16 @@ class BrowserRuntime:
         self._observations: dict[int, JsonObject] = {}
         self._dialogs: dict[str, Dialog] = {}
         self._locks: dict[str, asyncio.Lock] = {}
-        self._navigation: dict[str, JsonObject] = {}
         self._owns_browser = False
         self._visual: dict[str, JsonObject] = {}
         self._file_controls: dict[str, JsonObject] = {}
         self._file_controls_truncated = False
         self._file_document: JsonObject | None = None
         self._connection_lock = asyncio.Lock()
-        self._network_requests = 0
         self._popups: dict[str, list[Page]] = {}
         self._downloads: dict[str, Download] = {}
         self._input_states = {target: NativeInput.read(value) for target, value in (inputs or {}).items()}
         self._documents: dict[tuple[str, str], JsonObject] = {}
-
-    async def _route(self, route: Route) -> None:
-        if self._network_requests >= MAX_PENDING_COMMANDS:
-            await route.abort()
-            return
-        self._network_requests += 1
-        try:
-            await self._route_request(route)
-        finally:
-            self._network_requests -= 1
-
-    async def _route_request(self, route: Route) -> None:
-        request = route.request
-        if self.network_policy is None:
-            reason = await asyncio.to_thread(check_fetch_url, request.url)
-            decision: JsonObject = {"decision": "abort" if reason else "continue"}
-        else:
-            decision = await self.network_policy({"url": request.url, "resource_type": request.resource_type,
-                                                  "navigation": request.is_navigation_request()})
-        kind = decision.get("decision")
-        if kind == "continue":
-            await route.continue_()
-        elif kind == "abort":
-            await route.abort()
-        elif kind == "fulfill":
-            headers = decode_json_object(decision.get("headers", {}))
-            if not all(isinstance(value, str) for value in headers.values()):
-                raise ValueError("invalid route response headers")
-            await route.fulfill(status=require_json_integer(decision.get("status", 200), "status"),
-                headers={key: require_json_string(value, key) for key, value in headers.items()},
-                body=base64.b64decode(require_json_string(decision["body_base64"], "body_base64"), validate=True)
-                    if "body_base64" in decision else require_json_string(decision.get("body", ""), "body"))
-        else:
-            raise ValueError("invalid network policy decision")
 
     async def _connect(self, invocation: Invocation | None = None) -> None:
         async with self._connection_lock:
@@ -213,7 +177,7 @@ class BrowserRuntime:
             await self._mark(invocation, "browser_connected")
         self._browser = await self._playwright.chromium.connect_over_cdp(endpoint, timeout=10_000)
         for context in self._browser.contexts:
-            await context.route("**/*", self._route)
+            await self._network.guard(context)
         if binding is not None:
             await self._restore_pages(binding)
 
@@ -260,7 +224,7 @@ class BrowserRuntime:
         else:
             self._profile = Path(tempfile.mkdtemp(prefix="codey-task-browser-"))
             profile = self._profile
-        args = [executable, "--no-first-run", "--no-default-browser-check", "--disable-background-networking",
+        args = [executable, *CONTROLLED_BROWSER_FLAGS, "--disable-background-networking",
                 "--remote-debugging-port=0", f"--user-data-dir={profile}", "about:blank"]
         if self.config.headless:
             args.insert(1, "--headless=new")
@@ -310,6 +274,7 @@ class BrowserRuntime:
         page.on("dialog", dialog_opened)
         page.on("popup", popup_opened)
         page.on("download", download_started)
+        self._network.watch(page, binding.target_id)
         return state
 
     async def _register_popups(self) -> None:
@@ -333,8 +298,9 @@ class BrowserRuntime:
         if not create or self._browser is None:
             raise RuntimeError("browser_not_bound")
         context = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context(service_workers="block")
-        await context.route("**/*", self._route)
-        page = await context.new_page()
+        await self._network.guard(context)
+        seed = next((page for page in context.pages if page.url == "about:blank"), None) if self._owns_browser else None
+        page = seed if seed is not None else await context.new_page()
         state = self._register(page, await self._page_binding(page, owned=True))
         self._active = state.binding.target_id
         return state
@@ -406,8 +372,10 @@ class BrowserRuntime:
             state = self._pages.get(command.target_id)
             if state is None or state.page.is_closed():
                 raise RuntimeError("original_browser_target_lost")
-            return PageState(state.page, state.binding, command.frame_id or state.selected_frame)
-        return await self._current(invocation, create=create)
+            return PageState(state.page, state.binding,
+                "" if command.arguments.get("main_frame") is True else command.frame_id or state.selected_frame)
+        state = await self._current(invocation, create=create)
+        return PageState(state.page, state.binding) if command.arguments.get("main_frame") is True else state
 
     async def _execute(self, invocation: Invocation) -> tuple[JsonValue, bytes]:
         action = invocation.command.action
@@ -433,6 +401,11 @@ class BrowserRuntime:
                       BrowserAction.FRAME_LIST, BrowserAction.FRAME_SELECT, BrowserAction.DIALOG, BrowserAction.DIALOG_RESPOND}:
             return (await self._navigation_action(invocation)).payload(), b""
         state = await self._state(invocation)
+        if action == BrowserAction.DIAGNOSTICS:
+            return self._network.diagnostics(state.binding.target_id,
+                clear=invocation.command.arguments.get("clear") is True), b""
+        if action == BrowserAction.SUBMIT_FORM:
+            return (await self._submit_form(invocation, state)).payload(), b""
         if action == BrowserAction.WAIT:
             expected = invocation.command.arguments.get("expected_document")
             if isinstance(expected, dict) and isinstance(expected.get("frame_id"), str):
@@ -566,24 +539,21 @@ class BrowserRuntime:
             state = self._register(page, await self._page_binding(page, owned=True))
             self._active = state.binding.target_id
         previous = state.page.url
+        if self.config.bring_to_front:
+            await state.page.bring_to_front()
+        self._network.clear(state.binding.target_id)
         await self._mark(invocation, "navigation_dispatch", dispatch="unknown")
-        response = await state.page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+        response = await state.page.goto(url, wait_until="domcontentloaded",
+            timeout=max(1, min(20_000, int((invocation.command.deadline - time.monotonic()) * 1000))))
         await self._mark(invocation, "navigation_complete", dispatch="confirmed")
         self._pages[state.binding.target_id].selected_frame = ""
         self._revision += 1
-        async with frame_context(state.page, state.page.main_frame, state.binding.target_id) as observed:
-            headers = await response.all_headers() if response is not None else {}
-            facts: JsonObject = {
-                "http_status": response.status if response is not None else None,
-                "content_type": headers.get("content-type", "")}
-            self._navigation[self._document_key(observed.document)] = facts
+        headers = await response.all_headers() if response is not None else {}
+        facts: JsonObject = {"http_status": response.status if response is not None else None,
+                             "content_type": headers.get("content-type", "")}
         return BrowserToolOutput("Opened " + state.page.url, True, {"action": action.value, "url": state.page.url,
             "previous_url": previous, "page_id": state.binding.target_id, "generation": self._revision,
             **facts, "delivery": "delivered"})
-
-    @staticmethod
-    def _document_key(document: JsonObject) -> str:
-        return json.dumps(document, sort_keys=True, separators=(",", ":"))
 
     async def _observe(self, invocation: Invocation, context: FrameContext) -> BrowserToolOutput:
         action, args = invocation.command.action, invocation.command.arguments
@@ -704,7 +674,8 @@ class BrowserRuntime:
         visible_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body, true)")
         data["text"] = require_json_string(visible_text, "visible text")
         text = require_json_string(data["text"], "text")
-        facts = self._navigation.get(self._document_key(context.document), {})
+        target = require_json_string(context.document["target_id"], "target id")
+        facts = self._network.response_facts(target, require_json_string(data["url"], "capture URL"))
         return {"status": "ok", **data, **facts, "text": text[:100000], "truncated": len(text) > 100000,
                 "document": context.document, "observation": "current_page"}
 
@@ -732,6 +703,30 @@ class BrowserRuntime:
             {"action": "scroll", "ref": ref, "delivery": "delivered", "effect_verified": False,
              "page_url": context.document["url"], "text": ""})
 
+    async def _submit_form(self, invocation: Invocation, state: PageState) -> BrowserToolOutput:
+        args = invocation.command.arguments
+        async with self._frame(PageState(state.page, state.binding)) as observed:
+            expected = decode_json_object(args["expected_document"])
+            if not same_document(observed.document, expected):
+                raise ValueError("search_document_changed")
+            invocation.document = observed.document
+        timeout = max(1, int((invocation.command.deadline - time.monotonic()) * 1000))
+        query = state.page.locator(require_json_string(args["query_selector"], "query selector")).first
+        submit_selector = require_json_string(args["submit_selector"], "submit selector")
+        submit = state.page.locator(":is(" + submit_selector + "):visible").first
+        await self._mark(invocation, "form_fill", dispatch="unknown")
+        await query.fill(require_json_string(args["value"], "query"), timeout=timeout)
+        # Input handlers may navigate. Do not submit a different document.
+        async with self._frame(PageState(state.page, state.binding)) as observed:
+            if not same_document(observed.document, expected):
+                raise ValueError("search_document_changed")
+        await self._mark(invocation, "form_submit", dispatch="unknown")
+        await submit.click(timeout=max(1, min(5000, int((invocation.command.deadline - time.monotonic()) * 1000))))
+        await self._mark(invocation, "form_submitted", dispatch="confirmed")
+        state.selected_frame = ""
+        self._revision += 1
+        return BrowserToolOutput("Submitted the observed form.", True, {"delivery": "delivered"})
+
     async def _input(self, invocation: Invocation, state: PageState, context: FrameContext) -> BrowserToolOutput:
         action, args = invocation.command.action, invocation.command.arguments
         if action == BrowserAction.EVALUATE:
@@ -743,7 +738,8 @@ class BrowserRuntime:
             value = decode_json_object({"value": raw})["value"]
             self._revision += 1
             return BrowserToolOutput(json.dumps(value, ensure_ascii=False), True,
-                {"action": "eval", "value": value, "truncated": False, "delivery": "delivered"})
+                {"action": "eval", "value": value, "truncated": False, "delivery": "delivered",
+                 "document": context.document})
         if action == BrowserAction.SCROLL:
             return await self._scroll(invocation, state, context)
         ref = require_json_string(args["ref"], "ref")
@@ -1286,6 +1282,7 @@ class BrowserRuntime:
             with contextlib.suppress(Error, OSError, RuntimeError, ValueError):
                 await self._connect()
         if self._browser is not None:
+            await self._network.close()
             await self._register_popups()
             for target, inputs in self._input_states.items():
                 if inputs.keys and target in self._pages:

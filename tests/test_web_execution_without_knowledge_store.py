@@ -11,7 +11,9 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.task_execution import build_research_tools
 from codey.research.browser_search import BrowserSearchProvider
+from codey.research.search_contracts import SearchOutcome
 from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 from tests.test_research_submission_handoff_production import NativeExperimentProvider, install_http
 from tools.completion_explanation_ab import ExperimentProvider, Target
 
@@ -21,8 +23,8 @@ URL = "https://example.com/library/unittest.html"
 
 
 class Search(BrowserSearchProvider):
-    def search(self, query: str, limit: int = 5) -> list[JsonObject]:
-        return [{"url": URL, "title": "Testing", "snippet": "Test a discount formula."}]
+    def search(self, query: str, limit: int = 5) -> SearchOutcome:
+        return search_outcome(query, [{"url": URL, "title": "Testing", "snippet": "Test a discount formula."}], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         assert url == URL

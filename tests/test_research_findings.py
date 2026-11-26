@@ -1,7 +1,10 @@
 """Exact read references reduce model work without certifying interpretations."""
 
+from __future__ import annotations
+
 import copy
 import json
+from pathlib import Path
 
 import pytest
 
@@ -12,9 +15,12 @@ from codey.operations.kernel_facts import project_result_observation
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import AssistantTurn
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall
+from tests.support.search_fixture import search_outcome
 
 URL = "https://example.com/study"
 TEXT = "Writers and readers can run at the same time. There is only one writer at a time."
@@ -23,14 +29,14 @@ TEXT = "Writers and readers can run at the same time. There is only one writer a
 class Search:
     text = TEXT
 
-    def fetch(self, url):
+    def fetch(self, url: str) -> dict[str, object]:
         return {"status": "ok", "url": url, "title": "Original study", "text": self.text, "truncated": False}
 
-    def search(self, query, limit=8):
-        return [{"url": URL, "title": "Original study", "snippet": "Lead, not evidence"}]
+    def search(self, query: str, limit: int=8) -> SearchOutcome:
+        return search_outcome(query, [{"url": URL, "title": "Original study", "snippet": "Lead, not evidence"}], limit=limit)
 
 
-def setup(tmp_path):
+def setup(tmp_path: Path) -> object:
     store = KnowledgeStore(tmp_path)
     tools = ResearchTools(Search(), store, KnowledgeChanges(tmp_path), session_id="first")
     session = TaskSession(TaskPolicy(frozenset({"web.read", "knowledge.write", "knowledge.read", "control"})),
@@ -41,7 +47,7 @@ def setup(tmp_path):
     return store, tools, session, delegate
 
 
-def execute(delegate, tools, session, name, args):
+def execute(delegate: object, tools: object, session: object, name: str, args: dict[str, object]) -> object:
     from codey.research.tool_names import QUESTION_BOUND_TOOLS
 
     if name in QUESTION_BOUND_TOOLS and tools.ledger.questions:
@@ -64,7 +70,7 @@ def execute(delegate, tools, session, name, args):
     "Only one writer can write at a time.",
     "Writer concurrency:\n1. Only one writer can write at a time.\n2. Readers  and writers can run concurrently.",
 ])
-def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path, claim):
+def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path: Path, claim: str) -> None:
     store, tools, session, delegate = setup(tmp_path)
     try:
         opened = execute(delegate, tools, session, "open_url", {"url": URL})
@@ -108,7 +114,7 @@ def test_real_dispatch_save_restart_and_exact_idempotency(tmp_path, claim):
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_old_passage_still_archives_old_source_after_url_changes(tmp_path):
+def test_old_passage_still_archives_old_source_after_url_changes(tmp_path: Path) -> None:
     store, tools, session, delegate = setup(tmp_path)
     try:
         old = execute(delegate, tools, session, "open_url", {"url": URL})
@@ -133,7 +139,7 @@ def test_old_passage_still_archives_old_source_after_url_changes(tmp_path):
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_repair_context_recovers_passage_and_per_question_refs_without_new_reads(tmp_path):
+def test_repair_context_recovers_passage_and_per_question_refs_without_new_reads(tmp_path: Path) -> None:
     from codey.research.context_view import build_research_context_view
     from codey.research.evidence_view import reference_evidence_preview
     from codey.research.references import restore_bindings
@@ -174,7 +180,7 @@ def test_repair_context_recovers_passage_and_per_question_refs_without_new_reads
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_forged_unopened_and_cross_source_references_fail_without_writes(tmp_path):
+def test_forged_unopened_and_cross_source_references_fail_without_writes(tmp_path: Path) -> None:
     store, tools, session, delegate = setup(tmp_path)
     try:
         opened = execute(delegate, tools, session, "open_url", {"url": URL})
@@ -197,7 +203,7 @@ def test_forged_unopened_and_cross_source_references_fail_without_writes(tmp_pat
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_comparison_is_optional_unreviewed_and_never_filled_by_application(tmp_path):
+def test_comparison_is_optional_unreviewed_and_never_filled_by_application(tmp_path: Path) -> None:
     store, tools, session, delegate = setup(tmp_path)
     try:
         execute(delegate, tools, session, "open_url", {"url": URL})
@@ -218,26 +224,26 @@ def test_comparison_is_optional_unreviewed_and_never_filled_by_application(tmp_p
         store.close()
 
 
-def report_args(ref):
+def report_args(ref: str) -> dict[str, object]:
     return {"summary": f"Only one writer can write at a time. [{ref}]", "report_sections": {
         "evidence": [f"Only one writer can write at a time. [{ref}]"],
         "counter": ["本轮尚未调查反证，仍有证据缺口。"],
         "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency answered; version boundaries remain unknown.", "findings": [ref], "investigations": [], "task_refs": ["r1"]}]}}
 
 
-def answer_args(ref):
+def answer_args(ref: str) -> dict[str, object]:
     return {"report_sections": {"coverage": [{"question_ref": "q1", "state": "partial",
         "answer": "Only one writer can write at a time. Version boundaries remain unknown.",
         "findings": [ref], "investigations": [], "task_refs": ["r1"]}]}}
 
 
-def selection_args(ref):
+def selection_args(ref: str) -> dict[str, object]:
     return {"report_sections": {"coverage": [{"question_ref": "q1", "state": "partial",
         "findings": [ref], "task_refs": ["r1"]}]}}
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_multiple_passages_pin_separate_exact_excerpts_and_survive_receipt_restore(tmp_path):
+def test_multiple_passages_pin_separate_exact_excerpts_and_survive_receipt_restore(tmp_path: Path) -> None:
     from codey.research.evidence_view import resolve_selected_references
 
     store, tools, session, delegate = setup(tmp_path)
@@ -280,7 +286,7 @@ def test_multiple_passages_pin_separate_exact_excerpts_and_survive_receipt_resto
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.usefixtures("public_source_dns")
-def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path, monkeypatch, native):
+def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native: bool) -> None:
     from codey.operations.kernel_contracts import (
         KernelExecutionDeps,
         KernelObservationDeps,
@@ -300,7 +306,7 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
     class Provider:
         turns = 0
 
-        def reply(self):
+        def reply(self) -> object:
             self.turns += 1
             if self.turns == 1:
                 name, args = "web_search", {"query": "writer concurrency official documentation"}
@@ -311,16 +317,16 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
             return (AssistantTurn(tool_calls=(ProviderToolCall(f"call-{self.turns}", name, args),)) if native else
                     json.dumps({"tool": name, "args": args}))
 
-        def send(self, prompt):
+        def send(self, prompt: str) -> str:
             return self.reply()
 
-        def send_turn(self, prompt, declared):
+        def send_turn(self, prompt: str, declared: object) -> AssistantTurn:
             return self.reply()
 
-        def send_tool_results(self, results, declared):
+        def send_tool_results(self, results: object, declared: object) -> object:
             return self.reply()
 
-        def acknowledge_tool_results(self, results, declared, timeout=None):
+        def acknowledge_tool_results(self, results: object, declared: object, timeout: float | None=None) -> AssistantTurn:
             return AssistantTurn()
 
     try:

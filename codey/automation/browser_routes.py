@@ -12,6 +12,11 @@ from codey.types.json_value import JsonObject, require_json_string
 @dataclass(frozen=True)
 class RouteRequest:
     url: str
+    resource_type: str = "other"
+    navigation: bool = False
+
+    def is_navigation_request(self) -> bool:
+        return self.navigation
 
 
 @dataclass
@@ -20,7 +25,7 @@ class RouteReply:
     decision: JsonObject = field(default_factory=lambda: {"decision": "abort"})
 
     def abort(self, error_code: str | None = None) -> None:
-        self.decision = {"decision": "abort"}
+        self.decision = {"decision": "abort", "reason": error_code or "policy_denied"}
 
     def continue_(self) -> None:
         self.decision = {"decision": "continue"}
@@ -42,7 +47,8 @@ class RouteReply:
 
 def route_policy(handler: Callable[[RouteDecision], None]) -> Callable[[JsonObject], JsonObject]:
     def policy(request: JsonObject) -> JsonObject:
-        reply = RouteReply(RouteRequest(require_json_string(request["url"], "url")))
+        reply = RouteReply(RouteRequest(require_json_string(request["url"], "url"),
+            require_json_string(request.get("resource_type", "other"), "resource type"), request.get("navigation") is True))
         handler(reply)
         return reply.decision
     return policy

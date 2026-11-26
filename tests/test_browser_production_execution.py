@@ -15,7 +15,7 @@ from codey.operations.task_execution import ExecutionDelegate, build_research_to
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
-from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.connector_search import ScholarlySources
 from codey.research.ledger import ResearchLedger
 from codey.research.tools import ResearchTools
 from codey.research.web_sources import WebSourceProvider
@@ -208,9 +208,8 @@ def test_browser_resource_cannot_grant_unauthorized_actions(production_browser: 
 
 
 def test_default_provider_wrapper_shares_one_browser_without_starting_chromium() -> None:
-    base = BrowserSearchProvider(headless=True)
-    web = WebSourceProvider(browser_factory=lambda: base)
-    provider = ConnectorAwareSearchProvider(web)
+    provider = WebSourceProvider(scholarly=ScholarlySources())
+    web = provider
     try:
         resources = build_research_tools(SimpleNamespace(search_factory=lambda: provider),
                                          session_id="s", project="", browser_actions=True)

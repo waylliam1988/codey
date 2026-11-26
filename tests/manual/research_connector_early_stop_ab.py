@@ -1,19 +1,16 @@
-"""Offline 2A A/B for connector early-stop behaviour.
-
-The candidate removes only the connector-hit early return.  It always invokes
-the existing browser provider under the same result limit, then uses the
-production merge/deduplication function.  No production default is changed.
-"""
-
+"""Frozen early-stop control compared with the current single coordinator."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codey.research import connector_search as production
+from codey.research import web_sources as production
+from codey.research.connector_search import ScholarlySources
+from codey.research.search_contracts import SearchOutcome, complete_search
+from codey.research.search_profiles import SearchProfile
+from codey.research.search_provenance import SearchAttempt
 from codey.types.json_value import JsonObject
 
 ARMS = ("baseline", "browser_after_connector")
-
 
 @dataclass(frozen=True)
 class SearchCase:
@@ -42,62 +39,42 @@ def cases() -> tuple[SearchCase, ...]:
 
 
 class _FakeProvider:
-    name = "fixture-browser"
-
     def __init__(self, rows: tuple[JsonObject, ...]) -> None:
         self.rows = rows
         self.calls = 0
-
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        del query
+    def search(self, query: str, *, limit: int, profile: SearchProfile, deadline: float) -> SearchOutcome:
         self.calls += 1
-        return list(self.rows[:limit])
+        return complete_search(query, list(self.rows), SearchAttempt(query, profile.name), limit, explicit_empty=not self.rows)
+    def fetch(self, url: str) -> dict[str, object]:
+        raise AssertionError("search fixture cannot open documents")
+    def close(self) -> None:
+        pass
 
 
-class _ConnectorFixture(production.ConnectorAwareSearchProvider):
+class _ScholarlyFixture(ScholarlySources):
+    def __init__(self, rows: tuple[JsonObject, ...]) -> None:
+        super().__init__(connector_ids=())
+        self.rows = rows
+    def search(self, query: str, *, limit: int, deadline: float) -> SearchOutcome:
+        return complete_search(query, list(self.rows), SearchAttempt(query, "fixture", coverage="scholarly"),
+                               limit, explicit_empty=not self.rows)
+
+
+class _ConnectorFixture(production.WebSourceProvider):
     def __init__(self, browser: _FakeProvider, connector_rows: tuple[JsonObject, ...]) -> None:
-        super().__init__(browser, connector_ids=(), connector_limit=2)
-        self.connector_rows = connector_rows
-
-    def _connector_search_results(self, query: str, *, limit: int, safe_query=None):
-        del query, safe_query
-        return list(self.connector_rows[:limit])
-
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
-        """Freeze the historical early-stop control after production moved on."""
-        result_limit = production._bounded_limit(limit, default=8, upper=production.MAX_CONNECTOR_HITS)
-        rows = self._connector_search_results(query, limit=min(self.connector_limit, result_limit))
-        if len(rows) >= production.CONNECTOR_MIN_RESULTS:
-            return rows
-        return production._merge_results(rows, self._base_search(query, limit=result_limit), limit=result_limit)
-
-
-def _candidate_search(self: _ConnectorFixture, query: str, limit: int = 8) -> list[JsonObject]:
-    query = " ".join((query or "").split())
-    if not query:
-        return []
-    result_limit = production._bounded_limit(limit, default=8, upper=production.MAX_CONNECTOR_HITS)
-    connector_rows = self._connector_search_results(query, limit=min(self.connector_limit, result_limit))
-    browser_rows = self._base_search(query, limit=result_limit)
-    return production._merge_results(connector_rows, browser_rows, limit=result_limit)
+        super().__init__(browser_factory=lambda: browser, scholarly=_ScholarlyFixture(connector_rows))
 
 
 def run_case(case: SearchCase, arm: str) -> JsonObject:
     browser = _FakeProvider(case.browser_hits)
-    provider = _ConnectorFixture(browser, case.connector_hits)
-    if arm == "browser_after_connector":
-        provider.search = _candidate_search.__get__(provider, _ConnectorFixture)
-    rows = provider.search("versioned limitation", limit=case.limit)
-    return {
-        "case": case.name,
-        "arm": arm,
-        "connector_hits": len(case.connector_hits),
-        "browser_calls": browser.calls,
+    if arm == "baseline" and len(case.connector_hits) >= 2:
+        rows = list(case.connector_hits[:case.limit])  # Frozen historical control, never production dispatch.
+    else:
+        rows = _ConnectorFixture(browser, case.connector_hits).search("versioned limitation", limit=case.limit).rows
+    return {"case": case.name, "arm": arm, "connector_hits": len(case.connector_hits), "browser_calls": browser.calls,
         "result_urls": [row.get("url", "") for row in rows],
         "browser_material_added": any("official.example.org" in str(row.get("url")) for row in rows),
-        "result_count": len(rows),
-        "limit_preserved": len(rows) <= case.limit,
-    }
+        "result_count": len(rows), "limit_preserved": len(rows) <= case.limit}
 
 
 def summarize() -> JsonObject:
@@ -110,7 +87,7 @@ def summarize() -> JsonObject:
         "schema_version": 1,
         "arms": list(ARMS),
         "cases": len(cases()),
-        "rows": rows,
+        "rows": [row for row in rows],
         "mechanism": {
             "baseline_early_stop": all(row["browser_calls"] == 0 for row in by_arm[ARMS[0]]),
             "candidate_browser_called": all(row["browser_calls"] == 1 for row in by_arm[ARMS[1]]),

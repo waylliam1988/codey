@@ -8,6 +8,9 @@ from __future__ import annotations
 import unittest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+from codey.providers.base import AssistantTurn
+from codey.research.search_contracts import SearchOutcome
+from tests.support.search_fixture import search_outcome
 
 
 class BatchMismatchTests(unittest.TestCase):
@@ -35,7 +38,7 @@ class BatchMismatchTests(unittest.TestCase):
         second_call = ToolCall(name="edit", args={"path": "b.txt", "content": "new"}, call_id="c1")
         executed = []
 
-        def _exec(call):
+        def _exec(call: object) -> object:
             executed.append(call.name)
             from codey.runtime.core.models import ToolResult
             return ToolResult(ok=True, call=call, model_text="ok")
@@ -79,7 +82,7 @@ class FakeFingerprintTests(unittest.TestCase):
 
 class ControllerFailureTests(unittest.TestCase):
     def test_controller_failure_is_fail_closed(self) -> None:
-        from codey.operations.kernel import kernel_protocol as proto
+        from codey.operations import turn_snapshot as proto
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
@@ -87,10 +90,10 @@ class ControllerFailureTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="research", project="demo", max_turns=2)
         orig = proto.controller_allowed_for_session
 
-        def _boom(_session):
+        def _boom(_session: object) -> None:
             raise RuntimeError("controller boom")
 
-        proto.controller_allowed_for_session = _boom  # type: ignore[assignment]
+        proto.controller_allowed_for_session = _boom
         try:
             try:
                 snapshot = proto.build_turn_snapshot(session)
@@ -100,7 +103,7 @@ class ControllerFailureTests(unittest.TestCase):
             # return an explicit fail-closed sentinel, never None.
             self.assertNotEqual(snapshot, None, "controller failure must not become unlimited")
         finally:
-            proto.controller_allowed_for_session = orig  # type: ignore[assignment]
+            proto.controller_allowed_for_session = orig
 
     def test_guarded_slot_exception_does_not_allow(self) -> None:
         from codey.operations.kernel import kernel_execution as kernel
@@ -116,10 +119,10 @@ class ControllerFailureTests(unittest.TestCase):
             import codey.operations.kernel_tool_args as proto
             orig_allows = proto._controller_allows
 
-            def _boom(tool, allowed):
+            def _boom(tool: object, allowed: object) -> None:
                 raise RuntimeError("ctl boom")
 
-            proto._controller_allows = _boom  # type: ignore[assignment]
+            proto._controller_allows = _boom
             result = kernel._guarded_slot_result(session, "id-x", call, "web_search", 1, None, {"web_search"})
             # Exception in controller check must fail closed, never None (proceed).
             self.assertIsNotNone(result)
@@ -127,7 +130,7 @@ class ControllerFailureTests(unittest.TestCase):
         finally:
             if orig_allows is not None:
                 import codey.operations.kernel_tool_args as proto2
-                proto2._controller_allows = orig_allows  # type: ignore[assignment]
+                proto2._controller_allows = orig_allows
 
 
 class ReadonlyNegationTests(unittest.TestCase):
@@ -140,7 +143,7 @@ class ReadonlyNegationTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="project", project="demo", max_turns=4)
         session.task_text = "检查 bug，不要修改任何文件"
         # Explicit entry requirement: no modification required.
-        session.project_changes_required = False  # type: ignore[attr-defined]
+        session.project_changes_required = False
         verdict = evaluate(session, "结论\n检查完成\n来源\n无改动")
         # Must not block on project_changes_required.
         self.assertNotIn("project_changes_required", verdict.followup)
@@ -202,24 +205,24 @@ class SecondRoundWebPromptTests(unittest.TestCase):
         sent_prompts: list[str] = []
 
         class FakeWeb:
-            def send(self, prompt, timeout=None):
+            def send(self, prompt: str, timeout: float | None=None) -> str:
                 sent_prompts.append(str(prompt))
                 if len(sent_prompts) == 1:
                     return '{"tool":"web_search","args":{"query":"hi"}}'
                 return '{"tool":"done","args":{"summary":"结论\n来源\nx"}}'
 
-            def send_tool_results(self, messages, tools, timeout=None):
+            def send_tool_results(self, messages: object, tools: object, timeout: float | None=None) -> object:
                 return self.send("tool results")
 
         from codey.research.browser_search import BrowserSearchProvider
         from codey.research.tools import ResearchTools
 
         class Search(BrowserSearchProvider):
-            def search(self, query, limit=8):
-                return [
+            def search(self, query: str, limit: int=8) -> SearchOutcome:
+                return search_outcome(query, [
                     {"title": "A", "url": "https://example.com/a", "snippet": "a"},
                     {"title": "B", "url": "https://example.com/b", "snippet": "b"},
-                ]
+                ], limit=limit)
 
         tools = ResearchTools(Search(), store=None, changes=None)
         tools.ledger.questions = questions
@@ -264,13 +267,13 @@ class DoneReceiptFailureTests(unittest.TestCase):
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2, task_text="hi")
 
         class FakeNative:
-            def send_turn(self, prompt, tools, timeout=None):
+            def send_turn(self, prompt: str, tools: object, timeout: float | None=None) -> AssistantTurn:
                 return AssistantTurn(tool_calls=(ProviderToolCall(name="done", arguments={"summary": "结论\n来源\nx"}, id="d1"),), text="")
 
-            def send_tool_results(self, messages, tools, timeout=None):
+            def send_tool_results(self, messages: object, tools: object, timeout: float | None=None) -> None:
                 raise RuntimeError("delivery boom")
 
-            def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            def acknowledge_tool_results(self, results: object, declared_tools: object, timeout: float | None=None) -> AssistantTurn:
                 return self.send_tool_results(results, [])
 
         from unittest.mock import patch
@@ -296,7 +299,7 @@ class DoneReceiptFailureTests(unittest.TestCase):
         self.assertIn(result.stop_reason, ("delivery_pending",))
 
 
-def test_native_recovery_without_original_ids_cannot_fall_back_to_text():
+def test_native_recovery_without_original_ids_cannot_fall_back_to_text() -> None:
     from codey.operations.kernel_transport import _native_tool_results
     from codey.runtime.core.models import ToolCall, ToolResult
     with unittest.TestCase().assertRaisesRegex(ValueError, "original call id"):

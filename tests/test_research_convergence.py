@@ -17,9 +17,11 @@ from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, STRICT_RESEARCH_REQUIRED_CHECKS, TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.answer_contract import AnswerScope
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall
 from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 
 AUXILIARY = ("research_plan", "knowledge_commit", "knowledge_write", "knowledge_link", "save_finding", "save_inference")
 
@@ -28,8 +30,8 @@ class Search:
     def fetch(self, url: str) -> dict[str, object]:
         return {"status": "ok", "url": url, "title": "Original study", "text": "One writer at a time.", "truncated": False}
 
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
-        return [{"url": "https://example.com/study", "title": "Original study", "snippet": "Lead, not evidence"}]
+    def search(self, query: str, limit: int = 8) -> SearchOutcome:
+        return search_outcome(query, [{"url": "https://example.com/study", "title": "Original study", "snippet": "Lead, not evidence"}], limit=limit)
 
 
 def setup(tmp_path: Path) -> tuple[KnowledgeStore, ResearchTools, TaskSession, ExecutionDelegate]:
@@ -50,7 +52,8 @@ def test_every_research_entry_exposes_complete_delivery_and_authorized_tools(tmp
         session.policy = TaskPolicy(session.policy.grants, strict_research=True, required_checks=checks)
         snapshot = build_turn_snapshot(session, native=native)
         assert isinstance(snapshot.research.scope, AnswerScope)
-        assert {"knowledge_commit", "knowledge_write", "save_finding", "save_inference"} <= set(snapshot.tool_names)
+        assert {"knowledge_write", "save_finding", "save_inference"} <= set(snapshot.tool_names)
+        assert "knowledge_commit" not in snapshot.tool_names
         assert "submit_research_answer" in snapshot.tool_names and "done" in snapshot.tool_names
         spec = next(spec for spec in snapshot.model_specs if spec.name == "submit_research_answer")
         assert spec.required == ("markdown", "state")
@@ -74,7 +77,9 @@ def test_invalid_auxiliary_action_never_writes_or_registers_plan(tmp_path: Path,
         questions, count = tools.ledger.questions, store.index.count()
         result, ok, _ = delegate.research_executor._execute_research(ToolCall(tool, {}))
         assert not ok and not result.ok
-        assert result.model_text.startswith("ERROR:")
+        assert result.model_text
+        if tool == "knowledge_commit":
+            assert "knowledge_updates" in result.model_text
         assert tools.ledger.questions == questions and store.index.count() == count
         assert not result.canonical.get("research_submission")
     finally:

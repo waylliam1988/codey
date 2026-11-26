@@ -34,6 +34,7 @@ from codey.operations.task_session import TaskSession
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_response_codec import normalize_local_reply
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.research.web_sources import WebSourceProvider
 from codey.types.json_value import (
@@ -45,6 +46,7 @@ from codey.types.json_value import (
     require_json_string,
 )
 from tests.manual.ghost_memory_routing.world_model_verification_review import SingleAttemptPolicy, parse_usage
+from tests.support.search_fixture import search_outcome
 from tools import local_model_gate_attempts as attempts
 
 REPO = Path(__file__).resolve().parents[1]
@@ -304,12 +306,12 @@ class Provider(attempts.RecordingProvider):
 
 @contextmanager
 def controlled(case: Case, directory: Path) -> Generator[None, None, None]:
-    def search(_self: WebSourceProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
+    def search(_self: WebSourceProvider, query: str, *, limit: int = 8) -> SearchOutcome:
         hits: list[JsonObject] = [{"title": page.get("title", "Retired source locator"), "url": url,
                  "snippet": "Versioned policy document. Open the source to inspect the actual contract."}
                 for url, page in case.pages.items()][:limit]
         append(directory / "acquisitions.jsonl", {"kind": "search", "query": query, "results": hits})
-        return hits
+        return search_outcome(query, hits, limit=limit)
 
     def fetch(_self: WebSourceProvider, url: str) -> JsonObject:
         page: JsonObject = {**case.pages.get(url, {"status": "error", "detail": "No fixture source at this URL.",

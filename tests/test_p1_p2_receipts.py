@@ -23,22 +23,25 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
 from codey.research.answer_contract import AnswerScope, digest, submit_answer
-from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.connector_search import ScholarlySources
 from codey.research.evidence_gaps import evidence_gaps, gap_search_candidates, same_source_groups
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.passages import ReadPassage
 from codey.research.receipt_types import InvestigationRecord
 from codey.research.reference import ResearchReference
 from codey.research.report_evidence import check_report_evidence
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_document import OpenedSource, SourceDocument, SourcePage
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.source_observation import snapshot_document, source_observation, source_snapshot
+from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectSettlement
 from codey.toolchain.runtime import read_file, write_file
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from codey.types.tool_image import TOOL_IMAGES_KEY, ToolImageRef
 from codey.workspace.context_admission import request_scope
+from tests.support.search_fixture import search_outcome
 
 
 @pytest.mark.parametrize("quote,extra,expected", [
@@ -266,8 +269,8 @@ def test_arxiv_full_text_reuses_admitted_provider_and_keeps_original_attempt(
         admitted.append(url)
 
     class Sources:
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             requested.append(url)
@@ -278,6 +281,7 @@ def test_arxiv_full_text_reuses_admitted_provider_and_keeps_original_attempt(
             raise TimeoutError("full text timed out")
 
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", admit)
+
     ledger = ResearchLedger()
     with fake_pypdf("A complete source page."):
         result = ResearchSourceGateway(Sources(), ledger).open(abstract)
@@ -302,8 +306,8 @@ def test_pubmed_retains_confirmed_retraction_when_opening_or_falling_back_from_p
     failures: list[str] = []
 
     class Sources:
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             requests.append(url)
@@ -311,7 +315,7 @@ def test_pubmed_retains_confirmed_retraction_when_opening_or_falling_back_from_p
                 return {"status": "ok", "url": url, "text": "This is the complete archived document."}
             raise TimeoutError("repository did not respond")
 
-    class Connector(ConnectorAwareSearchProvider):
+    class Connector(ScholarlySources):
         def _read_connector_url(self, connector_id: str, url: str) -> str:
             assert connector_id == "pubmed" and "12345678" in url
             return """<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>12345678</PMID>
@@ -327,8 +331,16 @@ def test_pubmed_retains_confirmed_retraction_when_opening_or_falling_back_from_p
         failures.append(str(error))
 
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", admit)
+    def http_fixture(url: str) -> dict[str, object]:
+        from codey.research.source_acquisition import with_attempt
+        requests.append(url)
+        page: dict[str, object] = ({"status": "ok", "url": url, "text": "This is the complete archived document."}
+            if full_text_available else {"status": "error", "url": url, "http_status": 404,
+                "failure_code": "page_unavailable", "detail": "repository did not contain the document"})
+        return with_attempt(page, "http", url)
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", http_fixture)
     ledger = ResearchLedger()
-    result = ResearchSourceGateway(Connector(Sources()), ledger, on_failure=record_failure).open(pubmed)
+    result = ResearchSourceGateway(WebSourceProvider(browser_factory=Sources, scholarly=Connector()), ledger, on_failure=record_failure).open(pubmed)
     assert result.status == "ok"
     assert requests == ([pmc] if full_text_available else [pmc, doi])
     attempts = result.acquisition["attempts"]
@@ -340,7 +352,7 @@ def test_pubmed_retains_confirmed_retraction_when_opening_or_falling_back_from_p
     assert result.document.publication.doi == "10.5555/fixture"
     assert result.document.final_url == (pmc if full_text_available else pubmed)
     assert result.document.content_kind == ("html" if full_text_available else "abstract")
-    assert ("repository did not respond" in failures) is not full_text_available
+    assert ("repository did not contain the document" in failures) is not full_text_available
 
 
 def test_pdf_pages_from_different_downloads_do_not_share_a_source_version() -> None:

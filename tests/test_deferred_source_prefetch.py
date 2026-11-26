@@ -12,6 +12,7 @@ from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.task.web_intent import explicit_web_intent, source_requirements
 from codey.types.json_value import JsonObject
@@ -37,7 +38,7 @@ def test_conditional_access_keeps_original_source_identity(task: str, deferred: 
 
 def test_kernel_does_not_prefetch_a_deferred_source_before_local_work() -> None:
     class Search:
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
             raise AssertionError("initialization must not search")
         def fetch(self, url: str) -> dict[str, object]:
             raise AssertionError("initialization must not open a conditional URL")

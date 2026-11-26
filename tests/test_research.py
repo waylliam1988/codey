@@ -16,10 +16,10 @@ from types import SimpleNamespace, TracebackType
 from typing import Self
 from unittest import mock
 
-from playwright.sync_api import BrowserContext, Page, Route
+from playwright.sync_api import Page, Route
 
 from codey.automation import browser_worker
-from codey.automation.browser import Session, open_headless_page
+from codey.automation.browser import open_headless_page
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.kernel.kernel_protocol import normalize_turn
@@ -28,17 +28,16 @@ from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.network import check_fetch_url
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
-from codey.research import browser_search, extract, source_download
+from codey.research import extract, source_download
 from codey.research.answer_report import AnswerReport
-from codey.research.browser_page import _page_content_after_navigation
-from codey.research.browser_search import RESEARCH_CDP_PORT, RESEARCH_PROFILE, BrowserSearchProvider
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pdf_extract import PDF_MAX_BYTES, PdfSkipped, extract_pdf_document, parse_pages
 from codey.research.proof_quality import review_research_proof
 from codey.research.provenance import provenance_problem
 from codey.research.report_quality import review_report_quality
-from codey.research.source_acquisition import with_attempt
+from codey.research.search_contracts import SearchOutcome, complete_search
+from codey.research.search_provenance import SearchAttempt
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOURCE_START
 from codey.research.tools import ResearchTools
@@ -46,7 +45,7 @@ from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
-from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.types.json_value import decode_json_object, require_json_string
 from tests.support.real_cdp import chromium_executable
 from tests.support.research_done_finalizer import finalize_done_answer
 from tests.support.research_iteration_adapter import ResearchIteration
@@ -119,14 +118,14 @@ class FakeProvider:
 class FakeSearch:
     name = "fake-search"
 
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
-        return [
+    def search(self, query: str, limit: int = 8) -> SearchOutcome:
+        return complete_search(query, [
             {
                 "title": "Helium article",
                 "url": "https://example.com/helium",
                 "snippet": "Helium supply.",
             }
-        ]
+        ], SearchAttempt(query, "fixture"), limit, explicit_empty=True)
 
     def fetch(self, url: str) -> dict[str, object]:
         return {"status": "ok",
@@ -145,7 +144,7 @@ class RecordingSearch(FakeSearch):
         super().__init__()
         self.queries: list[str] = []
 
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+    def search(self, query: str, limit: int = 8) -> SearchOutcome:
         self.queries.append(query)
         return super().search(query, limit=limit)
 
@@ -156,7 +155,7 @@ class TrackingSearch(FakeSearch):
         self.queries: list[str] = []
         self.fetch_urls: list[str] = []
 
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+    def search(self, query: str, limit: int = 8) -> SearchOutcome:
         self.queries.append(query)
         return super().search(query, limit=limit)
 
@@ -174,9 +173,9 @@ class PriorityFailSearch(FakeSearch):
         self.queries: list[str] = []
         self.fetch_urls: list[str] = []
 
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+    def search(self, query: str, limit: int = 8) -> SearchOutcome:
         self.queries.append(query)
-        return [
+        return complete_search(query, [
             {
                 "title": "PubMed: ICI hepatotoxicity",
                 "url": self.pubmed_url,
@@ -187,7 +186,7 @@ class PriorityFailSearch(FakeSearch):
                 "url": self.general_url,
                 "snippet": "general result",
             },
-        ]
+        ], SearchAttempt(query, "fixture"), limit, explicit_empty=True)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.fetch_urls.append(url)
@@ -542,8 +541,8 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_web_search_omits_root_landing_results_from_model_output(self) -> None:
         class LandingSearch(FakeSearch):
-            def search(self, query: str, limit: int = 8) -> list[JsonObject]:
-                return [
+            def search(self, query: str, limit: int = 8) -> SearchOutcome:
+                return complete_search(query, [
                     {
                         "title": "PubMed",
                         "url": "https://pubmed.ncbi.nlm.nih.gov/",
@@ -559,7 +558,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/",
                         "snippet": "Specific article evidence.",
                     },
-                ]
+                ], SearchAttempt(query, "fixture"), limit, explicit_empty=True)
 
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -924,196 +923,24 @@ class ResearchBoundaryTests(unittest.TestCase):
             return value + 1
         self.assertEqual(browser_worker.call(increment, 4), 5)
 
-    def test_browser_worker_call_is_reentrant_on_browser_thread(self) -> None:
-        def outer() -> str:
-            return browser_worker.call(lambda: "nested", timeout=0.5)
 
-        self.assertEqual(browser_worker.call(outer, timeout=1.0), "nested")
 
-    def test_browser_search_uses_dedicated_worker_when_called_from_browser_worker(self) -> None:
-        provider = BrowserSearchProvider()
-        sentinel = [{"title": "Alpha", "url": "https://example.com/a", "snippet": ""}]
 
-        with (
-            mock.patch("codey.research.browser_search._search_browser_call", return_value=sentinel) as search_call,
-            mock.patch(
-                "codey.research.browser_search.browser_worker.call",
-                side_effect=AssertionError("Research search must not reenter the provider browser worker"),
-            ),
-        ):
-            result = browser_worker.default_worker().call(
-                lambda: provider.search("alpha", limit=3), timeout=1.0
-            )
 
-        self.assertEqual(result, sentinel)
-        search_call.assert_called_once_with(mock.ANY)
-
-    def test_browser_search_records_worker_health_on_boundary_timeout(self) -> None:
-        provider = BrowserSearchProvider()
-        fake_worker = mock.Mock()
-        fake_worker.health_snapshot.return_value.to_payload.return_value = {
-            "state": "stuck",
-            "stuck_detected": True,
-            "queue_size": 1,
-        }
-
-        with (
-            mock.patch(
-                "codey.research.browser_search._search_browser_call",
-                side_effect=TimeoutError("browser worker call timed out"),
-            ),
-            mock.patch("codey.research.browser_search._search_browser_worker", return_value=fake_worker),
-            self.assertRaises(TimeoutError),
-        ):
-            provider.search("alpha", limit=3)
-
-        self.assertEqual(
-            provider.worker_health(),
-            {"state": "stuck", "stuck_detected": True, "queue_size": 1},
-        )
-
-    def test_browser_search_defaults_to_isolated_browser(self) -> None:
-        session = Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=True)
-        provider = BrowserSearchProvider()
-
-        with mock.patch("codey.research.browser_search.open_chat_page", return_value=session) as opened:
-            self.assertIs(provider._ensure_session_on_browser_thread(reuse_url_contains="bing.com"), session)
-
-        opened.assert_called_once_with(
-            "about:blank",
-            "",
-            port=RESEARCH_CDP_PORT,
-            profile=RESEARCH_PROFILE,
-            open_if_missing=True,
-            require_exact_port=False,
-            bring_to_front=False,
-            isolated=True,
-            fresh_tab=False,
-            browser_path=None,
-            allow_new_page=True,
-        )
-
-    def test_browser_search_shared_mode_preserves_old_reuse_contract(self) -> None:
-        session = Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=False)
-        provider = BrowserSearchProvider(
-            profile_dir=Path("shared-profile"),
-            cdp_port=9333,
-            isolated=False,
-            bring_to_front=True,
-        )
-
-        with mock.patch("codey.research.browser_search.open_chat_page", return_value=session) as opened:
-            self.assertIs(provider._ensure_session_on_browser_thread(reuse_url_contains="bing.com"), session)
-
-        opened.assert_called_once_with(
-            "about:blank",
-            "bing.com",
-            port=9333,
-            profile=Path("shared-profile"),
-            open_if_missing=True,
-            require_exact_port=False,
-            bring_to_front=False,
-            isolated=False,
-            fresh_tab=False,
-            browser_path=None,
-            allow_new_page=True,
-        )
 
     def test_research_flow_default_explicitly_reuses_research_browser(self) -> None:
-        from codey.research import search_factory
+        from codey.research.search_factory import default_research_search_provider
+        provider = default_research_search_provider()
+        self.assertIsInstance(provider, WebSourceProvider)
+        self.assertIsNotNone(provider.scholarly)
+        self.assertIsNone(provider._browser)
+        provider.close()
 
-        base_provider = mock.Mock()
-        with mock.patch(
-            "codey.research.search_factory.WebSourceProvider",
-            return_value=base_provider,
-        ) as browser_cls:
-            provider = search_factory.default_research_search_provider()
 
-        browser_cls.assert_called_once_with()
-        self.assertIs(provider.base_provider, base_provider)
 
-    def test_browser_search_replaces_stuck_search_page_after_navigation_timeout(self) -> None:
-        provider = BrowserSearchProvider(engine="bing")
-        first, replacement = mock.Mock(spec=Page), mock.Mock(spec=Page)
-        rows: list[JsonObject] = [{"title":"Recovered result", "url":"https://example.com/recovered"}]
-        with (mock.patch.object(provider, "_ensure_search_page_on_browser_thread", return_value=first),
-              mock.patch.object(provider, "_replace_search_page_on_browser_thread", return_value=replacement) as replace_page,
-              mock.patch.object(provider, "_discard_search_page_on_browser_thread") as discard,
-              mock.patch.object(provider, "_search_page_results_on_browser_thread", side_effect=[TimeoutError("navigation timed out"), rows])):
-            results = provider._search_on_browser_thread("alpha", 3)
-        discard.assert_called_once_with(first)
-        replace_page.assert_called_once_with()
-        self.assertEqual(results, rows)
-        self.assertEqual(len(provider.last_search_errors), 1)
 
-    def test_browser_search_rejects_wrong_host_after_search_navigation(self) -> None:
-        provider = BrowserSearchProvider(engine="bing")
-        with (routed_search_page("<main>Unexpected search destination</main>", redirect="https://evidencenow.io/") as page,
-              self.assertRaises(browser_search.SearchUnavailableError) as caught):
-            provider._search_page_results_on_browser_thread(page, "alpha", 3)
-        self.assertEqual(caught.exception.failure_kind, "search_wrong_host")
 
-    def test_browser_search_rejects_blank_search_page(self) -> None:
-        provider = BrowserSearchProvider(engine="bing")
-        with (routed_search_page("<body></body>") as page,
-              self.assertRaises(browser_search.SearchUnavailableError) as caught):
-            provider._search_page_results_on_browser_thread(page, "alpha", 3)
-        self.assertEqual(caught.exception.failure_kind, "search_page_blank")
 
-    def test_browser_search_anchor_scan_marks_recovered_rows_not_truncated(self) -> None:
-        provider = BrowserSearchProvider(engine="bing")
-        with routed_search_page('<main>Search results for the current query.'
-                '<a href="https://www.bing.com/search?q=next">Search</a>'
-                '<a href="https://example.com/recovered">Recovered</a></main>') as page:
-            results = provider._search_page_results_on_browser_thread(page, "alpha", 3)
-        self.assertEqual(results, [{"title":"Recovered","url":"https://example.com/recovered","snippet":"","truncated":False}])
-
-    def test_browser_search_falls_back_to_next_engine_after_page_failures(self) -> None:
-        provider = BrowserSearchProvider()
-        provider._engine_order = ("bing", "duckduckgo")
-        pages = [object(), object(), object()]
-        engines: list[str] = []
-
-        ensure = mock.patch.object(provider, "_ensure_search_page_on_browser_thread", return_value=pages[0])
-        replacement = mock.patch.object(provider, "_replace_search_page_on_browser_thread", side_effect=[pages[1], pages[2]])
-        self.addCleanup(ensure.stop)
-        self.addCleanup(replacement.stop)
-        ensure.start()
-        replacement.start()
-
-        def search_page(_page: Page, _query: str, _limit: int, **kwargs: object) -> list[JsonObject]:
-            engine = str(kwargs["engine"])
-            engines.append(engine)
-            if engine == "bing":
-                raise browser_search.SearchUnavailableError(
-                    "search_page_blank",
-                    engine=engine,
-                    detail="search page had no usable visible content",
-                )
-            return [{"title": "Recovered", "url": "https://example.com/recovered", "snippet": ""}]
-
-        with mock.patch.object(
-            provider,
-            "_search_page_results_on_browser_thread",
-            side_effect=search_page,
-        ):
-            results = provider._search_on_browser_thread("alpha", 3)
-
-        self.assertEqual(results[0]["url"], "https://example.com/recovered")
-        self.assertEqual(engines, ["bing", "bing", "duckduckgo"])
-        self.assertEqual(provider.last_search_errors[0]["failure_kind"], "search_page_blank")
-
-    def test_browser_search_cancellation_discards_page_and_does_not_retry(self) -> None:
-        provider = BrowserSearchProvider(engine="bing")
-        page = mock.Mock(spec=Page)
-        with (mock.patch.object(provider, "_ensure_search_page_on_browser_thread", return_value=page),
-              mock.patch.object(provider, "_replace_search_page_on_browser_thread") as replacement,
-              mock.patch.object(provider, "_discard_search_page_on_browser_thread") as discard,
-              mock.patch.object(provider, "_search_page_results_on_browser_thread", side_effect=cancellation.TaskCancelled("stop")),
-              self.assertRaises(cancellation.TaskCancelled)):
-            provider._search_on_browser_thread("alpha", 3)
-        replacement.assert_not_called()
-        discard.assert_called_once_with(page)
 
     def test_browser_worker_call_observes_task_cancellation_while_waiting(self) -> None:
         event = threading.Event()
@@ -2637,8 +2464,8 @@ class ResearchBoundaryTests(unittest.TestCase):
                 super().__init__()
                 self.fetch_urls: list[str] = []
 
-            def search(self, query: str, limit: int = 8) -> list[JsonObject]:
-                return [
+            def search(self, query: str, limit: int = 8) -> SearchOutcome:
+                return complete_search(query, [
                     {
                         "title": "PubMed",
                         "url": "https://pubmed.ncbi.nlm.nih.gov/",
@@ -2649,7 +2476,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                         "url": self.article_url,
                         "snippet": "Specific PubMed abstract.",
                     },
-                ]
+                ], SearchAttempt(query, "fixture"), limit, explicit_empty=True)
 
             def fetch(self, url: str) -> dict[str, object]:
                 self.fetch_urls.append(url)
@@ -3587,122 +3414,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             self.assertEqual(accepted.markdown, markdown)
             store.close()
 
-    def test_browser_search_fetch_uses_separate_page_from_search_results(self) -> None:
-        for front in (False, True):
-            context = mock.Mock(spec=BrowserContext)
-            seed, fetched = mock.Mock(spec=Page), mock.Mock(spec=Page)
-            seed.context = context
-            fetched.is_closed.return_value = False
-            fetched._codey_research_guarded = False
-            context.new_page.return_value = fetched
-            provider = BrowserSearchProvider(bring_to_front=front)
-            provider._session = Session(mock.Mock(), mock.Mock(), seed)
-            provider._search_page = seed
-            actual = provider._ensure_fetch_page_on_browser_thread("https://example.com/article")
-            self.assertIs(actual, fetched)
-            self.assertIsNot(actual, seed)
-            if front:
-                fetched.bring_to_front.assert_called_once_with()
-            else:
-                fetched.bring_to_front.assert_not_called()
 
-    def test_browser_search_retries_content_while_page_is_still_navigating(self) -> None:
-        page = mock.Mock(spec=Page)
-        page.content.side_effect = [RuntimeError("Page.content: Unable to retrieve content because the page is navigating and changing the content."),
-                                    "<html><title>Done</title><body>ready</body></html>"]
-        with mock.patch.object(cancellation, "wait") as sleep:
-            content = _page_content_after_navigation(page)
-        self.assertIn("ready", content)
-        self.assertEqual(page.content.call_count, 2)
-        page.wait_for_load_state.assert_called_once()
-        sleep.assert_called_once()
 
-    def test_browser_search_fetch_uses_bounded_worker_timeout(self) -> None:
-        provider = BrowserSearchProvider()
-        payload = {"status": "ok",
-            "url": "https://example.com/article",
-            "title": "Article",
-            "text": "Readable article body with enough text for research evidence.",
-            "truncated": False,
-        }
 
-        with mock.patch("codey.research.browser_search._search_browser_call", return_value=payload) as call:
-            result = provider.fetch("https://example.com/article")
 
-        self.assertEqual({key: value for key, value in result.items() if key != "acquisition"}, payload)
-        acquisition = decode_json_object(result["acquisition"])
-        attempts = acquisition["attempts"]
-        assert isinstance(attempts, list)
-        self.assertEqual(decode_json_object(attempts[0])["backend"], "browser")
-        call.assert_called_once_with(
-            mock.ANY,
-            timeout=browser_search._FETCH_TOTAL_TIMEOUT_SECONDS,
-            on_abandoned=mock.ANY,
-        )
 
-    def test_browser_search_fetch_timeout_returns_error_and_records_worker_health(self) -> None:
-        provider = BrowserSearchProvider()
-        fake_worker = mock.Mock()
-        fake_worker.health_snapshot.return_value.to_payload.return_value = {
-            "state": "stuck",
-            "stuck_detected": True,
-            "queue_size": 1,
-        }
-
-        with (
-            mock.patch(
-                "codey.research.browser_search._search_browser_call",
-                side_effect=TimeoutError("browser worker call timed out"),
-            ),
-            mock.patch("codey.research.browser_search._search_browser_worker", return_value=fake_worker),
-        ):
-            result = provider.fetch("https://www.sciencedirect.com/science/article/pii/S2352396424000239")
-
-        self.assertTrue(require_json_string(result["text"], "text").startswith("ERROR: could not load page within "))
-        self.assertEqual(
-            provider.worker_health(),
-            {"state": "stuck", "stuck_detected": True, "queue_size": 1},
-        )
-
-    def test_fetch_on_browser_thread_rejects_blank_page_and_discards_fetch_page(self) -> None:
-        provider = BrowserSearchProvider()
-        page = mock.Mock(spec=Page)
-        page.url = "https://example.com/article"
-        response = mock.Mock(status=200, headers={"content-type":"text/html"})
-        page.goto.return_value = response
-        page.content.return_value = "<html><title>Blank</title><body></body></html>"
-        page.query_selector.return_value = None
-        provider._fetch_page = page
-        provider._register_owned_page_on_browser_thread(page)
-        with (mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
-              mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-              mock.patch("codey.research.browser_search._fetch_page_content_after_settle", return_value=(page.content(), ""))):
-            result = provider._fetch_on_browser_thread(page.url)
-        self.assertEqual(result["status"], "error")
-        page.close.assert_not_called()
-        self.assertIs(provider._fetch_page, page)
-
-    def test_fetch_on_browser_thread_waits_through_cookie_wall_without_http_retry(self) -> None:
-        provider = BrowserSearchProvider()
-        page = mock.Mock(spec=Page)
-        page.url = "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
-        page.goto.return_value = mock.Mock(status=200, headers={"content-type":"text/html"})
-        challenge = "<html><body>Cookies must be enabled Enable cookies for pmc.ncbi.nlm.nih.gov and reload this page to continue.</body></html>"
-        article = "<html><title>PMC Article</title><body>Full PMC article text with clinical evidence and readable abstract.</body></html>"
-        page.content.side_effect = [challenge, article]
-        page.query_selector.return_value = None
-        provider._fetch_page = page
-        provider._register_owned_page_on_browser_thread(page)
-        with (mock.patch.object(provider,"_ensure_fetch_page_on_browser_thread",return_value=page),
-              mock.patch("codey.research.browser_search.check_fetch_url",return_value=None),
-              mock.patch.object(cancellation,"wait"),
-              mock.patch("codey.research.source_download._download_text_fallback") as fallback):
-            result = provider._fetch_on_browser_thread(page.url)
-        fallback.assert_not_called()
-        self.assertEqual(result["title"],"PMC Article")
-        self.assertIn("Full PMC article text",require_json_string(result["text"],"text"))
-        page.close.assert_not_called()
-        self.assertIs(provider._fetch_page,page)
 
     def test_http_text_fallback_rejects_browser_challenge_page(self) -> None:
         class Headers(dict[str, str]):
@@ -3953,40 +3669,6 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(RedirectHandler.hits, 1)
         self.assertEqual(checked_urls, [url, "http://127.0.0.1/private.pdf"])
 
-    def test_browser_search_pdf_sentinel_download_runs_outside_browser_thread(self) -> None:
-        provider = WebSourceProvider()
-        sentinel = {"status": "ok",
-            "url": "https://example.com/report.pdf",
-            "title": "Report PDF",
-            "text": "",
-            "content_kind": "pdf_download",
-            "mime_type": "application/pdf",
-            "truncated": False,
-        }
-        streamed = {"status": "ok",
-            "url": "https://example.com/report.pdf",
-            "title": "Report PDF",
-            "text": "downloaded",
-            "content_kind": "pdf",
-            "mime_type": "application/pdf",
-            "truncated": False,
-        }
-
-        with (
-            mock.patch("codey.research.web_sources.fetch_http_document", return_value=with_attempt(
-                source_download._fetch_failure("https://example.com/report", "HTTP 403", code="access_restricted", http_status=403),
-                "http", "https://example.com/report")),
-            mock.patch("codey.research.browser_search._search_browser_call", return_value=sentinel),
-            mock.patch("codey.research.source_download._download_pdf_streaming", return_value=streamed) as download,
-        ):
-            result = provider.fetch("https://example.com/report")
-
-        self.assertEqual({key: value for key, value in result.items() if key != "acquisition"}, streamed)
-        trace = decode_json_object(result["acquisition"])
-        attempts = trace["attempts"]
-        assert isinstance(attempts, list)
-        self.assertEqual([decode_json_object(row)["backend"] for row in attempts], ["http", "browser", "http"])
-        download.assert_called_once_with("https://example.com/report.pdf", mime_type="application/pdf")
 
     def test_browser_search_pdf_streaming_checks_cancellation_between_chunks(self) -> None:
         class StreamingResponse:
@@ -4155,35 +3837,7 @@ class NetworkPolicyTests(unittest.TestCase):
             self.assertIsNone(r2)
             self.assertEqual(mock_dns.call_count, 1)
 
-    def test_fetch_on_browser_thread_discards_page_on_cancellation(self) -> None:
-        provider = BrowserSearchProvider()
-        page = mock.Mock(spec=Page)
-        page.goto.side_effect = cancellation.TaskCancelled("operation cancelled")
-        provider._fetch_page = page
-        with (mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
-              mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-              self.assertRaises(cancellation.TaskCancelled)):
-            provider._fetch_on_browser_thread("https://example.com/item")
-        page.close.assert_not_called()
-        self.assertIs(provider._fetch_page, page)
 
-    def test_fetch_on_browser_thread_discards_page_on_post_goto_cancellation(self) -> None:
-        provider = BrowserSearchProvider()
-        page = mock.Mock(spec=Page)
-        page.url = "https://example.com/item"
-        event = threading.Event()
-        def navigate(*args: object, **kwargs: object) -> object:
-            event.set()
-            return mock.Mock(status=200, headers={"content-type":"text/html"})
-        page.goto.side_effect = navigate
-        provider._fetch_page = page
-        with (cancellation.scope(event),
-              mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
-              mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-              self.assertRaises(cancellation.TaskCancelled)):
-            provider._fetch_on_browser_thread(page.url)
-        page.close.assert_not_called()
-        self.assertIs(provider._fetch_page, page)
 
 
     def test_connector_read_url_text_rejects_non_public_resolved_ip(self) -> None:

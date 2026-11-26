@@ -26,8 +26,10 @@ from codey.env_names import NATIVE_TOOLS_ENV
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_response_codec import normalize_local_reply
 from codey.research.browser_search import BrowserSearchProvider
+from codey.research.search_contracts import SearchOutcome
 from codey.research.web_sources import WebSourceProvider
 from tests.manual.ghost_memory_routing.world_model_verification_review import SingleAttemptPolicy, parse_usage
+from tests.support.search_fixture import search_outcome
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_food_gate import OPEN_TOOLS, opened_bodies
 
@@ -117,7 +119,7 @@ class ProbeProvider(attempts.RecordingProvider):
 
 @contextmanager
 def controlled(case: Case, directory: Path) -> Iterator[None]:
-    def search(_self: WebSourceProvider, query: str, *, limit: int = 8) -> list[dict[str, object]]:
+    def search(_self: WebSourceProvider, query: str, *, limit: int = 8) -> SearchOutcome:
         hits: list[dict[str, object]] = []
         if case.city in query or ("fuzhou" if case.city == "福州" else "qingdao") in query.lower():
             if case.mixed:
@@ -127,7 +129,7 @@ def controlled(case: Case, directory: Path) -> Iterator[None]:
                 hits.append({"title": f"{case.site}：{case.city}体验记录 {index + 1}", "url": url,
                     "snippet": "作者记录了当地体验，正文含具体选择与理由。"})
         append(directory / "acquisitions.jsonl", {"kind": "search", "query": query, "results": hits[:limit]})
-        return hits[:limit]
+        return search_outcome(query, hits[:limit], limit=limit)
 
     def fetch(_self: WebSourceProvider, url: str) -> dict[str, object]:
         if url in case.failure_urls:

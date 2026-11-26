@@ -10,18 +10,19 @@ import pytest
 
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.web_sources import WebSourceProvider
 from codey.task.entry_auth import derive_entry_auth
 from codey.task.web_intent import explicit_web_intent, source_url_key
-from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 
 URL = "https://example.com/"
 
 
 class Sources(WebSourceProvider):
-    def search(self, query: str, *, limit: int = 8) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int = 8) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
 class PageProvider:
     name = "Local"

@@ -21,10 +21,12 @@ from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy, build_task_policy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.answer_contract import answer_scope, submit_answer
+from codey.research.search_contracts import SearchOutcome
 from codey.research.task_mode import whole_research
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 
 
 @dataclass(frozen=True)
@@ -67,15 +69,16 @@ def test_report_requirement_preserves_explicit_project_work_and_denials(kind: st
     assert not readonly.allows("project.write") and not readonly.allows("browser.interact")
 
 
-def test_missing_legacy_research_plan_blocks_only_its_question_bound_tools() -> None:
+def test_missing_research_questions_keeps_independently_authorized_tools() -> None:
     policy = TaskPolicy(frozenset({"control", "project.read", "project.write", "project.verify",
                                    "web.read", "knowledge.read", "browser.observe", "browser.interact"}),
                         strict_research=True)
     session = TaskSession(policy, task_kind="project")
     snapshot = build_turn_snapshot(session)
-    assert {"research_plan", "edit", "run", "browser_snapshot"} <= set(snapshot.inventory_names)
+    assert {"edit", "run", "browser_snapshot"} <= set(snapshot.inventory_names)
+    assert "research_plan" not in snapshot.inventory_names
     assert "save_finding" not in snapshot.inventory_names
-    assert "open_url" not in snapshot.inventory_names
+    assert {"open_url", "web_search"} <= set(snapshot.inventory_names)
 
 
 def test_codemode_verification_uses_verify_grant_independently_of_edit_grant() -> None:
@@ -92,8 +95,8 @@ def test_codemode_verification_uses_verify_grant_independently_of_edit_grant() -
 
 
 class Source:
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         return {"status": "ok", "url": url, "title": "Reference", "truncated": False,

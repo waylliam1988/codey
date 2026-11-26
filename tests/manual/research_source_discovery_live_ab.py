@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import json
 import ssl
+from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.research import connector_search as production
+from codey.research.browser_search import BrowserSearchProvider
+from tests.manual import research_live_web_local_ab as observed
 from tests.manual import source_connector_ab as live
 
 ARMS = ("baseline", "browser_after_connector")
@@ -46,25 +48,14 @@ def formal_cases() -> tuple[live.Case, ...]:
     return tuple(rows)
 
 
-class BrowserAfterConnector(production.ConnectorAwareSearchProvider):
-    def search(self, query: str, limit: int = 8):  # type: ignore[no-untyped-def]
-        query = " ".join((query or "").split())
-        if not query:
-            return []
-        result_limit = production._bounded_limit(limit, default=8, upper=production.MAX_CONNECTOR_HITS)
-        connector_rows = self._connector_search_results(query, limit=min(self.connector_limit, result_limit))
-        browser_rows = self._base_search(query, limit=result_limit)
-        return production._merge_results(connector_rows, browser_rows, limit=result_limit)
-
-
 @contextmanager
-def experiment_patch():
-    def provider_for_arm(arm: str):
-        base = live.BrowserSearchProvider(isolated=False, bring_to_front=False)
+def experiment_patch() -> Iterator[None]:
+    def provider_for_arm(arm: str) -> observed.ObservedProduction:
+        base = BrowserSearchProvider(isolated=False, bring_to_front=False)
         if arm == "baseline":
-            return production.ConnectorAwareSearchProvider(base)
+            return observed.ObservedProduction(base)
         if arm == "browser_after_connector":
-            return BrowserAfterConnector(base)
+            return observed.BrowserAfterConnector(base)
         raise ValueError(arm)
 
     # The execution environment presents a local inspection CA. This scope is
@@ -73,12 +64,8 @@ def experiment_patch():
     with ExitStack() as stack:
         stack.enter_context(patch.object(live, "_search_provider_for_arm", provider_for_arm))
         stack.enter_context(patch.object(live, "WEB_PROVIDERS", ("local",)))
-        old_context = ssl._create_default_https_context
-        ssl._create_default_https_context = ssl._create_unverified_context
-        try:
-            yield
-        finally:
-            ssl._create_default_https_context = old_context
+        stack.enter_context(patch.object(ssl, "_create_default_https_context", ssl._create_unverified_context))
+        yield
 
 
 def run(output: Path, *, cases: tuple[live.Case, ...], arms: tuple[str, ...]) -> None:

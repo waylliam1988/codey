@@ -4,9 +4,11 @@ import contextlib
 import unittest
 from pathlib import Path
 
+from codey.research.search_contracts import SearchOutcome
 from tests.support.legacy_json_codec import JsonToolCodec
 from tests.support.research_controller import ResearchController, render_control_block
 from tests.support.research_protocol import JsonToolCodec as ResearchCodec
+from tests.support.search_fixture import search_outcome
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "golden"
 
@@ -52,9 +54,9 @@ class GoldenParityTests(unittest.TestCase):
         from codey.research.tools import ResearchTools
 
         class FakeSearch:
-            def search(self, q, limit=8):
-                return []
-            def fetch(self, url):
+            def search(self, q: str, limit: int=8) -> SearchOutcome:
+                return search_outcome(q, [], limit=limit)
+            def fetch(self, url: str) -> dict[str, object]:
                 return {}
 
         # Use a temporary store but avoid cleanup permission issues by using a fixed temp dir

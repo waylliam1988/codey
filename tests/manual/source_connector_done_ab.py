@@ -19,23 +19,30 @@ import json
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from typing import Protocol
+
 from codey.knowledge.store import KnowledgeStore
 from codey.providers import controls as provider_controls
+from codey.providers.base import ChatProvider
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research import report_quality as report_quality_module
 from codey.research.browser_search import BrowserSearchProvider
-from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.citations import parse_citations
+from codey.research.connector_search import ScholarlySources
 from codey.research.ledger import ResearchLedger
 from codey.research.proof_quality import review_research_proof
+from codey.research.provenance import provenance_problem
+from codey.research.report_quality import ReportQualityReview
+from codey.utils.citation_scanner import citation_ref_items, citation_refs
+from codey.utils.refs import coerce_int
 from codey.utils.report_sections import (
     REQUIRED_SECTIONS,
     parse_sections,
@@ -91,8 +98,13 @@ _QUALITY_CHECKLIST = """Probe quality-review checklist:
 """
 
 
+class _QualityReviewer(Protocol):
+    def __call__(self, summary: str, *, ledger: ResearchLedger, opened_sources: set[str],
+                 search_result_urls: set[str]) -> ReportQualityReview: ...
+
+
 @contextlib.contextmanager
-def _patched_quality_review(enabled: bool):
+def _patched_quality_review(enabled: bool) -> Iterator[None]:
     if not enabled:
         yield
         return
@@ -104,14 +116,14 @@ def _patched_quality_review(enabled: bool):
         report_quality_module.review_report_quality = original
 
 
-def _batched_quality_review(original: Callable[..., Any]) -> Callable[..., Any]:
+def _batched_quality_review(original: _QualityReviewer) -> _QualityReviewer:
     def wrapped(
         summary: str,
         *,
         ledger: ResearchLedger,
         opened_sources: set[str],
         search_result_urls: set[str],
-    ):
+    ) -> ReportQualityReview:
         review = original(
             summary,
             ledger=ledger,
@@ -153,14 +165,14 @@ def _quality_blockers(
     if missing:
         blockers.append("missing required section(s): " + ", ".join(section_title(item) for item in missing))
         return blockers
-    strict_problem = report_quality_module.provenance_problem(
+    strict_problem = provenance_problem(
         report_quality_module._strict_provenance_text(sections, summary),
         opened_sources=opened_sources,
         search_result_urls=search_result_urls,
     )
     if strict_problem:
         blockers.append(strict_problem)
-    context_problem = report_quality_module.provenance_problem(
+    context_problem = provenance_problem(
         report_quality_module._context_provenance_text(sections),
         opened_sources=opened_sources,
         search_result_urls=search_result_urls,
@@ -171,11 +183,11 @@ def _quality_blockers(
     if not ledger.final_url_set():
         blockers.append("no opened source is available for citation")
 
-    body_ref_items = report_quality_module.citation_ref_items(report_quality_module._without_sources(sections))
+    body_ref_items = citation_ref_items(report_quality_module._without_sources(sections))
     pages_by_number = report_quality_module._pages_by_number(body_ref_items)
     citations = [
         replace(item, pages=pages_by_number.get(item.number, ()))
-        for item in report_quality_module.parse_citations(sections.get("sources", ""), ledger)
+        for item in parse_citations(sections.get("sources", ""), ledger)
     ]
     if not citations:
         blockers.append("来源 section must list numbered sources like [1] Title - https://final-url")
@@ -202,12 +214,12 @@ def _quality_blockers(
     page_problem = report_quality_module._page_citation_problem(citations, ledger) if citations else ""
     if page_problem:
         blockers.append(page_problem)
-    if not report_quality_module.citation_refs(sections.get("conclusion", "")):
+    if not citation_refs(sections.get("conclusion", "")):
         blockers.append("结论 section must cite evidence with [n]")
-    if not report_quality_module.citation_refs(sections.get("evidence", "")):
+    if not citation_refs(sections.get("evidence", "")):
         blockers.append("关键证据 section must cite opened sources with [n]")
     counter = sections.get("counter", "")
-    if not report_quality_module.citation_refs(counter) and not report_quality_module._says_no_strong_counter(counter):
+    if not citation_refs(counter) and not report_quality_module._says_no_strong_counter(counter):
         blockers.append("反证与限制 must cite counter-evidence with [n] or explicitly say 未找到强反证")
     if not blockers and fallback:
         blockers.append(str(fallback).removeprefix("Report quality failed: ").strip())
@@ -217,7 +229,7 @@ def _quality_blockers(
 class PromptBoundaryProvider:
     def __init__(
         self,
-        provider,
+        provider: ChatProvider,
         *,
         trace: LiveTrace | None,
         run_id: str,
@@ -236,17 +248,17 @@ class PromptBoundaryProvider:
         self.arm = arm
         self.sample = int(sample)
         self.send_index = 0
-        self.name = getattr(provider, "name", "")
-        self.location = getattr(provider, "location", "")
+        self.name = provider.name
+        self.location = provider.location
         self.thread_safe_send = getattr(provider, "thread_safe_send", False)
         self.overlay_hits = 0
         self.boundary_overlay_hits = 0
         self.quality_overlay_hits = 0
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> object:
         return getattr(self.provider, name)
 
-    def new_chat(self, timeout=None) -> None:
+    def new_chat(self, timeout: float | None = None) -> None:
         return self.provider.new_chat(timeout=timeout)
 
     def _overlay_prompt(self, text: str) -> tuple[str, list[str]]:
@@ -265,7 +277,7 @@ class PromptBoundaryProvider:
             prompt = prompt + "\n\n" + "\n\n".join(additions)
         return prompt, additions
 
-    def send(self, text: str, timeout=None) -> str:
+    def send(self, text: str, timeout: float | None = None) -> str:
         prompt, _ = self._overlay_prompt(text)
         self.send_index += 1
         turn = self.send_index
@@ -314,12 +326,12 @@ class PromptBoundaryProvider:
             )
         return str(reply or "")
 
-    def close(self) -> None:
+    def close(self) -> None | bool:
         return self.provider.close()
 
 
 def run_case(
-    provider,
+    provider: ChatProvider,
     *,
     provider_id: str,
     case: base.Case,
@@ -328,10 +340,10 @@ def run_case(
     max_turns: int,
     run_id: str,
     trace: LiveTrace | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     started = time.time()
-    tool_calls: list[dict[str, Any]] = []
-    model_actions: list[dict[str, Any]] = []
+    tool_calls: list[dict[str, object]] = []
+    model_actions: list[dict[str, object]] = []
     infos: list[str] = []
     provider_name = str(getattr(provider, "name", "") or "")
     with tempfile.TemporaryDirectory(prefix="codey-source-connector-done-ab-") as td:
@@ -367,7 +379,9 @@ def run_case(
                 run_id=run_id,
             )
             with _patched_quality_review(arm in BATCH_REVIEW_ARMS):
-                for event in runner.run(case.question):
+                for _ in runner.run(case.question):
+                    pass
+                for event in runner.events:
                     if event.kind == "turn":
                         model_actions.extend(base._safe_model_actions(event.turn, event.reply)[:3])
                     if event.kind == "info":
@@ -392,7 +406,7 @@ def run_case(
             )
             done_attempts = sum(1 for item in model_actions if item.get("tool") == "done")
             quality_retry_count = sum(1 for item in infos if item.startswith("Report quality failed"))
-            connector_errors = list(getattr(search, "last_connector_errors", []))[:8]
+            connector_errors = base._connector_errors(search)[:8]
             opened_target_host = _opened_target_host(result.source_urls, case.target_hosts)
             eventual_done_passed = result.stop_reason == "done"
             first_done_passed = eventual_done_passed and done_attempts == 1 and quality_retry_count == 0
@@ -437,7 +451,7 @@ def run_case(
                 ),
                 "used_legacy_open_url_id_action": any(
                     item.get("tool") == "open_url"
-                    and any(key in item.get("args", {}) for key in ("result_id", "source_id", "hit_id"))
+                    and any(key in base._fields(item.get("args")) for key in ("result_id", "source_id", "hit_id"))
                     for item in model_actions
                 ),
                 "tool_calls": tool_calls[:40],
@@ -501,7 +515,7 @@ def run_provider(
     rerun_failed: bool,
     trace: LiveTrace | None,
     run_id: str,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     try:
         payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms, samples=samples)
     except base.OutputProviderMismatch as exc:
@@ -518,9 +532,11 @@ def run_provider(
             )
         raise
     payload["trace_output"] = str(trace.path) if trace is not None else ""
+    rows = base._rows(payload.get("rows"))
+    payload["rows"] = rows
     existing = {
-        (str(row.get("case") or ""), str(row.get("arm") or ""), int(row.get("sample") or 1))
-        for row in payload["rows"]
+        (str(row.get("case") or ""), str(row.get("arm") or ""), coerce_int(row.get("sample"), default=1))
+        for row in rows
         if not (rerun_failed and row_has_terminal_failure(row))
     }
     pending = _pending_case_sample_keys(cases=cases, arms=arms, samples=samples, existing=existing)
@@ -546,10 +562,10 @@ def run_provider(
                     "arms": list(arms),
                     "samples": max(1, int(samples)),
                     "rerun_failed": bool(rerun_failed),
-                    "existing_rows": len(payload["rows"]),
+                    "existing_rows": len(rows),
                 }
             )
-            trace.record_run_complete(run_id=run_id, provider=provider_id, rows=len(payload["rows"]))
+            trace.record_run_complete(run_id=run_id, provider=provider_id, rows=len(rows))
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case.name for case in cases)} "
             f"arms={','.join(arms)} samples={max(1, int(samples))}; "
@@ -586,8 +602,8 @@ def run_provider(
                         run_id=run_id,
                         trace=trace,
                     )
-                    upsert_case_row(payload["rows"], row, provider_id=provider_id)
-                    payload["summary"] = summarize(payload["rows"])
+                    upsert_case_row(rows, row, provider_id=provider_id)
+                    payload["summary"] = summarize(rows)
                     payload["updated_at"] = _timestamp()
                     _write_payload(output, payload)
                     print(
@@ -597,14 +613,14 @@ def run_provider(
                         flush=True,
                     )
         payload["complete"] = True
-        payload["summary"] = summarize(payload["rows"])
+        payload["summary"] = summarize(rows)
         payload["updated_at"] = _timestamp()
         _write_payload(output, payload)
         if trace is not None:
             trace.record_run_complete(
                 run_id=run_id,
                 provider=provider_id,
-                rows=len(payload["rows"]),
+                rows=len(rows),
             )
         return payload
     finally:
@@ -614,11 +630,13 @@ def run_provider(
                 provider.close()
 
 
-def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    summary: dict[str, Any] = {"rows": len(rows), "run_count": len(rows), "by_case": {}, "by_arm": {}}
+def summarize(rows: list[dict[str, object]]) -> dict[str, object]:
+    by_case: dict[str, object] = {}
+    by_arm: dict[str, object] = {}
+    summary: dict[str, object] = {"rows": len(rows), "run_count": len(rows), "by_case": by_case, "by_arm": by_arm}
     for arm in sorted({str(row.get("arm") or "") for row in rows if row.get("arm")}):
         arm_rows = [row for row in rows if row.get("arm") == arm]
-        summary["by_arm"][arm] = aggregate_source_finalizer_rows(arm_rows)
+        by_arm[arm] = aggregate_source_finalizer_rows(arm_rows)
     for case in sorted({str(row.get("case") or "") for row in rows if row.get("case")}):
         case_rows = [row for row in rows if row.get("case") == case]
         arms = {
@@ -628,7 +646,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         baseline_rows = arms.get("baseline", [])
         boundary_rows = arms.get("boundary", [])
         batch_rows = arms.get("batch", [])
-        summary["by_case"][case] = {
+        by_case[case] = {
             "runs": len(case_rows),
             "arms": {arm: aggregate_source_finalizer_rows(arm_rows) for arm, arm_rows in arms.items()},
             "paired_vs_baseline": paired_source_finalizer_deltas(case_rows),
@@ -642,9 +660,10 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
-def _search_provider_for_arm(arm: str):
+def _search_provider_for_arm(arm: str) -> BrowserSearchProvider:
     base_search = BrowserSearchProvider(isolated=False, bring_to_front=False)
-    return ConnectorAwareSearchProvider(base_search)
+    base_search.scholarly = ScholarlySources()
+    return base_search
 
 
 def _opened_target_host(urls: list[str], target_hosts: tuple[str, ...]) -> bool:
@@ -699,15 +718,15 @@ def _load_or_new_payload(
     cases: tuple[base.Case, ...],
     arms: tuple[str, ...],
     samples: int,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     if output.exists():
         try:
-            payload = json.loads(output.read_text(encoding="utf-8"))
+            payload = base._fields(json.loads(output.read_text(encoding="utf-8")))
             if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
                 base._ensure_payload_provider(payload, provider_id=provider_id, output=output)
                 payload["complete"] = False
                 payload["probe"] = "source_connector_done_ab"
-                payload["samples"] = max(int(payload.get("samples") or 1), int(samples or 1))
+                payload["samples"] = max(coerce_int(payload.get("samples"), default=1), int(samples or 1))
                 return payload
         except (OSError, json.JSONDecodeError):
             pass
@@ -742,7 +761,7 @@ def _pending_case_sample_keys(
     ]
 
 
-def _write_payload(path: Path, payload: dict[str, Any]) -> None:
+def _write_payload(path: Path, payload: dict[str, object]) -> None:
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     if len(text.encode("utf-8")) > MAX_RESULT_BYTES:
         raise ValueError("source connector done A/B result exceeded bounded size")
@@ -765,9 +784,9 @@ class LiveTrace:
         self.path = path
         self.started = time.monotonic()
         self.started_at = _timestamp()
-        self.events: list[dict[str, Any]] = []
+        self.events: list[dict[str, object]] = []
 
-    def record(self, event: dict[str, Any]) -> None:
+    def record(self, event: dict[str, object]) -> None:
         payload = dict(event)
         payload["elapsed_seconds"] = round(time.monotonic() - self.started, 3)
         self.events.append(payload)
@@ -884,7 +903,7 @@ class LiveTrace:
         case: str,
         arm: str,
         sample: int,
-        row: dict[str, Any],
+        row: dict[str, object],
     ) -> None:
         self.record(
             {
@@ -896,7 +915,7 @@ class LiveTrace:
                 "sample": sample,
                 "ok": bool(row.get("ok")),
                 "stop_reason": str(row.get("stop_reason") or row.get("error") or ""),
-                "turns": int(row.get("turns") or 0),
+                "turns": coerce_int(row.get("turns")),
                 "score": row.get("score"),
                 "seconds": row.get("seconds"),
                 "summary": base._clip(row.get("summary_preview") or row.get("error") or "", 1200),
@@ -936,14 +955,14 @@ def _self_test() -> None:
         def __init__(self) -> None:
             self.sent: list[str] = []
 
-        def new_chat(self, timeout=None) -> None:
+        def new_chat(self, timeout: float | None = None) -> None:
             pass
 
-        def send(self, text: str, timeout=None) -> str:
+        def send(self, text: str, timeout: float | None = None) -> str:
             self.sent.append(text)
             return json.dumps({"tool": "done", "args": {"summary": "ok"}})
 
-        def close(self) -> None:
+        def close(self) -> None | bool:
             pass
 
     provider = DummyProvider()
@@ -961,7 +980,7 @@ def _self_test() -> None:
         "Your last done.summary did not pass the research quality review.\n"
         "Report quality failed: citation number(s) appear in the report but not in 来源: [3]."
     )
-    assert json.loads(reply)["tool"] == "done"
+    assert base._fields(json.loads(reply))["tool"] == "done"
     assert provider.sent
     assert "Opened-but-not-citable" in provider.sent[0]
     assert "quality-review checklist" in provider.sent[0]
@@ -1012,10 +1031,10 @@ def _self_test() -> None:
         },
     ]
     summary = summarize(rows)
-    assert summary["by_case"]["pubmed"]["baseline_first_pass_rate"] == 0.0
-    assert summary["by_case"]["pubmed"]["boundary_first_pass_rate"] == 1.0
-    assert summary["by_case"]["pubmed"]["batch_eventual_success_rate"] == 1.0
-    assert summary["by_arm"]["batch"]["count"] == 1
+    assert base._fields(base._fields(summary["by_case"])["pubmed"])["baseline_first_pass_rate"] == 0.0
+    assert base._fields(base._fields(summary["by_case"])["pubmed"])["boundary_first_pass_rate"] == 1.0
+    assert base._fields(base._fields(summary["by_case"])["pubmed"])["batch_eventual_success_rate"] == 1.0
+    assert base._fields(base._fields(summary["by_arm"])["batch"])["count"] == 1
     assert _pending_case_sample_keys(
         cases=(CASES["pubmed"],),
         arms=("baseline", "batch"),

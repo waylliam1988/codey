@@ -15,9 +15,11 @@ from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
+from codey.research.search_contracts import SearchOutcome
 from codey.task.entry_auth import derive_entry_auth
 from codey.task.model import TaskSubmission
 from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 
 
 @pytest.mark.parametrize("kind", ["auto", "chat", "project", "hybrid", "research"])
@@ -170,9 +172,9 @@ def test_default_entry_searches_opens_and_delivers_observed_source(
     marker = "FUZHOU_OBSERVED_CITY_731"
     acquisitions: list[str] = []
 
-    def search(self: WebSourceProvider, query: str, *, limit: int = 8) -> list[dict[str, object]]:
+    def search(self: WebSourceProvider, query: str, *, limit: int = 8) -> SearchOutcome:
         acquisitions.append("search:" + query)
-        return [{"url": url, "title": "Fuzhou", "snippet": "Open the city record."}]
+        return search_outcome(query, [{"url": url, "title": "Fuzhou", "snippet": "Open the city record."}], limit=limit)
 
     def fetch(self: WebSourceProvider, target: str) -> dict[str, object]:
         acquisitions.append("open:" + target)
@@ -181,8 +183,8 @@ def test_default_entry_searches_opens_and_delivers_observed_source(
     monkeypatch.setattr(WebSourceProvider, "search", search)
     monkeypatch.setattr(WebSourceProvider, "fetch", fetch)
     provider = ScriptedProvider((
-        {"tool": "web_search", "args": {"query": "Fuzhou city"}},
-        {"tool": "open_result", "args": {"result_id": "r1"}},
+        {"tool": "codemode", "args": {"code": "return unwrap(await tools.web_search({query:'Fuzhou city'}));"}},
+        {"tool": "codemode", "args": {"code": "return unwrap(await tools.open_result({result_id:'r1'}));"}},
         {"tool": "done", "args": {"summary": marker + " [s1]"}},
     ))
     rows: list[dict[str, object]] = []

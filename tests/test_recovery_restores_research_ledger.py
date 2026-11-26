@@ -1,5 +1,6 @@
 """Strict Research restores its ledger from real settled tool receipts."""
 from dataclasses import replace
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 
@@ -13,8 +14,11 @@ from codey.operations.recovery import record_entry_policy
 from codey.operations.task_entry import run_entry_kernel
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome, complete_search
+from codey.research.search_provenance import SearchAttempt
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.types.json_value import JsonObject, parse_json_object
 from tests.support.provider_actions import ProviderActions
 from tests.support.receipt_fixtures import inspect_receipt_facts
 from tests.support.workspace_conversation import TextConversation
@@ -23,7 +27,9 @@ from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open
 
 
 @pytest.mark.parametrize("acknowledged", [False, True])
-def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_path, monkeypatch, acknowledged, public_source_dns):
+def test_restart_preserves_exact_research_ledger_without_refetch_or_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, acknowledged: bool, public_source_dns: None,
+) -> None:
     import json
 
     from codey.knowledge.changes import KnowledgeChanges
@@ -38,14 +44,15 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=sink.durable)
     live = TaskSession(policy, task_kind="research", task_text="Research helium supply", max_turns=8)
     url = "https://example.com/helium"
-    calls = []
+    calls: list[str] = []
 
     class Search:
-        def search(self, query, limit=8):
+        def search(self, query: str, *, limit: int = 8) -> SearchOutcome:
             calls.append("search")
-            return [{"title": "Helium article", "url": url, "snippet": "Helium supply."}]
+            rows: list[JsonObject] = [{"title": "Helium article", "url": url, "snippet": "Helium supply."}]
+            return complete_search(query, rows, SearchAttempt(query, "fixture"), limit)
 
-        def fetch(self, target):
+        def fetch(self, target: str) -> dict[str, object]:
             calls.append("open")
             return {"status": "ok", "url": target, "title": "Helium article",
                     "text": "Helium is separated from natural gas streams.", "truncated": False}
@@ -108,7 +115,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
 
 
 
-def test_failed_ledger_projection_does_not_commit_partial_task_facts():
+def test_failed_ledger_projection_does_not_commit_partial_task_facts() -> None:
     from codey.agents.request import RecoveredToolOutcome
     from codey.operations.kernel_errors import RecoveryFailed
     from codey.policies.task_policy import TaskPolicy
@@ -141,7 +148,7 @@ def test_failed_ledger_projection_does_not_commit_partial_task_facts():
 
 
 
-def test_large_pdf_receipt_restores_exact_pages_and_evidence():
+def test_large_pdf_receipt_restores_exact_pages_and_evidence() -> None:
     import json
 
     from codey.research.ledger import EvidenceItem
@@ -159,7 +166,7 @@ def test_large_pdf_receipt_restores_exact_pages_and_evidence():
     ledger.add_evidence_items([EvidenceItem("finding", url, second[:700], note_id="note-1", page=2)])
     restored = ResearchLedger()
     for kind in ("open_url", "knowledge_write"):
-        receipt = json.loads(json.dumps(ledger_observation(ledger, kind, url=url)))
+        receipt = parse_json_object(json.dumps(ledger_observation(ledger, kind, url=url)))
         assert len(json.dumps(receipt)) > (8000 if kind == "open_url" else 600)
         restore_ledger_observation(restored, receipt)
     assert restored.opened_sources == ledger.opened_sources

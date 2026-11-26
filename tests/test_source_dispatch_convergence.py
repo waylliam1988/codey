@@ -14,9 +14,10 @@ from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 
 URL = "https://example.com/" + "x" * 600 + "/article"
 
@@ -25,8 +26,8 @@ class Source:
     def __init__(self) -> None:
         self.requests: list[str] = []
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return [{"url": URL, "title": "Field record", "snippet": "Locator preview"}]
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [{"url": URL, "title": "Field record", "snippet": "Locator preview"}], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.requests.append(url)

@@ -8,9 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from codey.research.search_contracts import SearchOutcome
+
 
 def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exception | None = None,
-         cancel_on_submission: bool = False):
+         cancel_on_submission: bool = False) -> object:
     """Exercise the production whole-answer path, without forcing an outer planner."""
     import os
     from types import SimpleNamespace
@@ -40,20 +42,20 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
         line.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=12,
                               max_repair_rounds=0, task_kind="research")
 
-    def state():
+    def state() -> object:
         return operation_from_checkpoint(durable.task("r"), "s")
 
-    def append(event, **row):
+    def append(event: str, **row: object) -> None:
         with (root / "observations.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({"event": event, **row}) + "\n")
 
     class Provider:
         native_tools = False
 
-        def new_chat(self):
+        def new_chat(self) -> None:
             append("new_chat")
 
-        def send(self, prompt):
+        def send(self, prompt: str) -> str:
             position = state()
             assert position.writer_attempt == 1
             append("request", attempt=position.writer_attempt, turn=position.logical_turn)
@@ -67,21 +69,21 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
                 "state": "answered", "markdown": "The original source states that recovery evidence is durable [e1]."}})
 
     class Search:
-        def search(self, query, limit=8):
+        def search(self, query: str, limit: int=8) -> SearchOutcome:
             raise AssertionError("The source is already supplied; no outside acquisition is required.")
 
-        def fetch(self, url):
+        def fetch(self, url: str) -> dict[str, object]:
             append("fetch", url=url)
             return {"status": "ok", "url": url, "title": "Original recovery source",
                     "text": "Recovery evidence is durable.", "truncated": False}
 
-        def close(self):
+        def close(self) -> None:
             pass
 
     store = KnowledgeStore(root / "knowledge")
     original_publish = store.publish_note
 
-    def publish(note, *args, **kwargs):
+    def publish(note: object, *args: object, **kwargs: object) -> object:
         result = original_publish(note, *args, **kwargs)
         append("write", identity=note.id)
         if boundary == "synthesis_published":
@@ -90,7 +92,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
 
     store.publish_note = publish
     if boundary:
-        def committed(*_):
+        def committed(*_: object) -> None:
             position = state()
             publications = [effect for effect in durable.effects("r")
                             if effect.intent.get("tool_name") == "_publish_research_answer"]
@@ -120,7 +122,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
         durable.close()
 
 
-def _settle_production_cancel(root, *, kind="research", publication_deps=True):
+def _settle_production_cancel(root: Path, *, kind: str="research", publication_deps: bool=True) -> object:
     from types import SimpleNamespace
 
     from codey.durable import DurableSession, SQLiteDurableStore
@@ -161,7 +163,7 @@ def _settle_production_cancel(root, *, kind="research", publication_deps=True):
 
 @pytest.mark.parametrize("boundary", ["request", "response", "tool_pending", "receipt", "writer_settled",
                                        "synthesis_published", "publication_admitted", "publication_settled"])
-def test_research_restart_preserves_original_reads_and_single_publication(tmp_path, boundary):
+def test_research_restart_preserves_original_reads_and_single_publication(tmp_path: Path, boundary: str) -> None:
     source = ("from pathlib import Path; from tests.durable.test_research_continuation_restart import _run; "
               "import sys; _run(Path(sys.argv[1]), sys.argv[2])")
     child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary], capture_output=True, timeout=50)
@@ -196,13 +198,13 @@ def test_research_restart_preserves_original_reads_and_single_publication(tmp_pa
         store.close()
 
 
-def test_ordinary_publication_rejects_changed_inputs_before_any_new_write(tmp_path, monkeypatch):
+def test_ordinary_publication_rejects_changed_inputs_before_any_new_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations import research_publication
     from codey.research.pipeline import ResearchContinuationError
 
     original = research_publication.publish_synthesis
 
-    def publish(history, tools, task, summary, **kwargs):
+    def publish(history: object, tools: object, task: str, summary: str, **kwargs: object) -> object:
         identity = original(history, tools, task, summary, **kwargs)
         for altered in ({"project": "other-scope"}, {"knowledge_refs": [{"id": "other", "revision": 2}]},
                         {"open_questions": ["Changed question"]}):
@@ -215,14 +217,14 @@ def test_ordinary_publication_rejects_changed_inputs_before_any_new_write(tmp_pa
     assert result.final_result.stop_reason == "done"
 
 
-def test_ordinary_publication_cancelled_before_admission_never_writes_answer(tmp_path, monkeypatch):
+def test_ordinary_publication_cancelled_before_admission_never_writes_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.knowledge.store import KnowledgeStore
     from codey.runtime.core.cancellation import TaskCancelled
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     original = RuntimeMutationLine.record_research_publication
 
-    def cancel(self, session_id, run_id, **kwargs):
+    def cancel(self, session_id: str, run_id: str, **kwargs: object) -> object:
         if kwargs.get("intent") is not None:
             self.durable.request_cancel(run_id, reason="cancel before answer publication")
         return original(self, session_id, run_id, **kwargs)
@@ -241,7 +243,7 @@ def test_ordinary_publication_cancelled_before_admission_never_writes_answer(tmp
 
 @pytest.mark.parametrize("boundary", ["publication_admitted", "synthesis_published", "publication_settled"])
 @pytest.mark.parametrize("resume_pipeline", [False, True])
-def test_crashed_publication_cancel_settles_original_transaction_without_new_work(tmp_path, boundary, resume_pipeline):
+def test_crashed_publication_cancel_settles_original_transaction_without_new_work(tmp_path: Path, boundary: str, resume_pipeline: bool) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.knowledge.store import KnowledgeStore
     from codey.runtime.core.cancellation import TaskCancelled
@@ -290,7 +292,7 @@ def test_crashed_publication_cancel_settles_original_transaction_without_new_wor
 
 
 @pytest.mark.parametrize("kind", ["coding", "research"])
-def test_production_cancel_without_publication_needs_no_research_dependencies(tmp_path, kind):
+def test_production_cancel_without_publication_needs_no_research_dependencies(tmp_path: Path, kind: str) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
@@ -309,12 +311,12 @@ def test_production_cancel_without_publication_needs_no_research_dependencies(tm
     _settle_production_cancel(tmp_path, kind=kind, publication_deps=False)
 
 
-def test_ordinary_research_accepts_no_stop_flag(tmp_path, monkeypatch):
+def test_ordinary_research_accepts_no_stop_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations import research_iteration
 
     original = research_iteration.run_research_iteration
 
-    def without_flag(*args, **kwargs):
+    def without_flag(*args: object, **kwargs: object) -> object:
         return original(*args, **{**kwargs, "stop_flag": None})
 
     monkeypatch.setattr(research_iteration, "run_research_iteration", without_flag)
@@ -322,7 +324,7 @@ def test_ordinary_research_accepts_no_stop_flag(tmp_path, monkeypatch):
     assert result.final_result.stop_reason == "done"
 
 
-def test_durable_cancellation_during_submission_never_returns_done(tmp_path):
+def test_durable_cancellation_during_submission_never_returns_done(tmp_path: Path) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
 
     result, _ = _run(tmp_path, cancel_on_submission=True)
@@ -339,7 +341,7 @@ def test_durable_cancellation_during_submission_never_returns_done(tmp_path):
 
 
 @pytest.mark.parametrize("not_sent", [True, False])
-def test_failed_submission_retains_original_turn_and_provider_diagnostic(tmp_path, not_sent):
+def test_failed_submission_retains_original_turn_and_provider_diagnostic(tmp_path: Path, not_sent: bool) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.providers.error_classification import RequestPrepError
     from codey.research.pipeline import ResearchContinuationError

@@ -1,72 +1,46 @@
-"""Acquisition cancellation/deadlines must not trigger fallback I/O or evidence."""
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
+"""Acquisition cancellation is never a search empty result or rendering fallback."""
+from __future__ import annotations
 
 import pytest
 
-from codey.research.browser_search import BrowserSearchProvider
-from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.automation.browser_contracts import BrowserToolOutput
+from codey.automation.browser_session import BrowserSession
+from codey.research.connector_search import ScholarlySources
 from codey.research.ledger import ResearchLedger
+from codey.research.source_connectors import SourceHit
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled
+from tests.test_search_failure_is_not_empty_success import Source
 
 
 @pytest.mark.parametrize("error", [TaskCancelled, DeadlineExceeded])
-def test_production_delegate_does_not_turn_task_stop_into_a_source_error(error):
-    from codey.operations.task_execution import ExecutionDelegate
-    from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import TaskPolicy
-    from codey.research.tools import ResearchTools
-    from codey.runtime.core.models import ToolCall
-
-    source = SimpleNamespace(fetch=Mock(side_effect=error("stop acquisition")))
-    tools = ResearchTools(source, None, None)
-    session = TaskSession(TaskPolicy(frozenset({"web.read", "control"})), task_kind="chat")
-    with patch("codey.research.source_gateway.check_fetch_url", return_value=""), pytest.raises(error):
-        ExecutionDelegate(session=session, research_tools=tools).execute(
-            ToolCall("open_url", {"url": "https://example.com/article"}))
-    assert not tools.ledger.opened_sources and not tools.ledger.read_passages
-
-
-def test_gateway_open_preserves_deadline_exception_without_evidence():
+def test_gateway_preserves_task_stop_without_source_evidence(monkeypatch: pytest.MonkeyPatch, error: type[Exception]) -> None:
+    class StoppedSource(Source):
+        def fetch(self, url: str) -> dict[str, object]:
+            raise error("stop acquisition")
+    def allow(url: str, *, use_cache: bool) -> None:
+        return None
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", allow)
     ledger = ResearchLedger()
-    gateway = ResearchSourceGateway(SimpleNamespace(fetch=Mock(side_effect=DeadlineExceeded("budget"))), ledger)
-    with patch("codey.research.source_gateway.check_fetch_url", return_value=""), pytest.raises(DeadlineExceeded):
-        gateway.open("https://example.com/guide")
-    assert ledger.final_url_set() == set()
-
-
-def test_browser_deadline_is_not_downgraded_to_navigation_timeout():
-    provider = BrowserSearchProvider()
-    with patch("codey.research.browser_search._search_browser_call", side_effect=DeadlineExceeded("budget")), patch.object(provider, "_record_worker_health"), pytest.raises(DeadlineExceeded):
-        provider.fetch("https://example.com/guide")
+    with pytest.raises(error):
+        ResearchSourceGateway(StoppedSource(), ledger).open("https://example.com/article")
+    assert not ledger.opened_sources and not ledger.read_passages
 
 
 @pytest.mark.parametrize("error", [TaskCancelled, DeadlineExceeded])
-@pytest.mark.parametrize("stage", ["lookup", "fetch"])
-def test_connector_lifecycle_exception_never_calls_browser_fallback(stage, error):
-    base = SimpleNamespace(fetch=Mock(side_effect=AssertionError("must not fall back")))
-    provider = ConnectorAwareSearchProvider(base, rate_limit=False)
-    hit = SimpleNamespace(connector_id="arxiv")
-    lookup = Mock(side_effect=error("stop")) if stage == "lookup" else Mock(return_value=hit)
-    with patch.object(provider, "_fetchable_hit_for_url", lookup), patch("codey.research.connector_search.fetch_recorded_hit", side_effect=error("stop")), pytest.raises(error):
-        provider.fetch("https://example.com/guide")
-    base.fetch.assert_not_called()
+def test_rendering_navigation_preserves_deadline_exception(error: type[Exception]) -> None:
+    class StoppedBrowser(BrowserSession):
+        def navigate(self, url: str) -> BrowserToolOutput:
+            raise error("stop navigation")
+    with pytest.raises(error):
+        TaskBrowserSource(StoppedBrowser()).fetch("https://example.com/article")
 
 
-@pytest.mark.parametrize("error", [TaskCancelled, DeadlineExceeded, TimeoutError])
-def test_connector_search_distinguishes_task_deadline_from_endpoint_timeout(error):
-    base = SimpleNamespace(search=Mock(return_value=[]))
-    provider = ConnectorAwareSearchProvider(base, connector_ids=("arxiv",), rate_limit=False)
-    with patch.object(provider, "_search_arxiv", side_effect=error("budget")) as connector:
-        if error is TimeoutError:
-            assert provider.search("quantum astronomy evidence") == []
-            base.search.assert_called_once()
-            assert provider.last_connector_errors == [{"connector_id": "arxiv", "action": "search", "error": "TimeoutError"}]
-        else:
-            with pytest.raises(error, match="budget"):
-                provider.search("quantum astronomy evidence")
-            base.search.assert_not_called()
-            assert provider.last_connector_errors == []
-    connector.assert_called_once()
-    assert provider._search_deadline is None
+@pytest.mark.parametrize("error", [TaskCancelled, DeadlineExceeded])
+def test_connector_lookup_preserves_task_stop(error: type[Exception]) -> None:
+    class StoppedConnector(ScholarlySources):
+        def _fetchable_hit_for_url(self, url: str) -> SourceHit | None:
+            raise error("stop lookup")
+    with pytest.raises(error):
+        StoppedConnector().fetch("https://example.com/article")

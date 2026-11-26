@@ -1,5 +1,7 @@
 """One writer, exact evidence accounting and one recoverable publication; no self-certification."""
 
+from __future__ import annotations
+
 import json
 import subprocess
 import sys
@@ -9,6 +11,9 @@ from types import SimpleNamespace
 import pytest
 
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
+from codey.providers.base import AssistantTurn
+from codey.research.search_contracts import SearchOutcome
+from tests.support.search_fixture import search_outcome
 from tests.test_research_findings import URL
 
 TASK = "Explain writer concurrency. Distinguish historical version restrictions."
@@ -18,10 +23,10 @@ UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x fast
 
 
 
-def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
-         provider_factory=None, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
-         unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None,
-         source_text=None, session_id="s", run_id="r", knowledge_root=None):
+def _run(root: Path, *, boundary: str="", resume: bool=False, budget: int=10, native: bool=False, task: str=TASK,
+         provider_factory: object=None, required_checks: object=RESEARCH_ANSWER_REQUIRED_CHECKS,
+         unsupported_claim: bool=False, bad_reference: bool=False, gap_answer: object=None, gap_investigation: bool=False, boundary_turn: int | None=None,
+         source_text: object=None, session_id: str="s", run_id: str="r", knowledge_root: object=None) -> object:
     import os
 
     from codey.durable import DurableSession, SQLiteDurableStore
@@ -48,10 +53,10 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
         line.accept_operation(session_id=session_id, run_id=run_id, provider_id="local", turn_budget=budget,
                               max_repair_rounds=0, task_kind="research")
 
-    def state():
+    def state() -> object:
         return operation_from_checkpoint(durable.task(run_id), session_id)
 
-    def log(**row):
+    def log(**row: object) -> None:
         with (root / "calls.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row) + "\n")
 
@@ -59,24 +64,24 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     claim = "Multiple writers commit concurrently." if unsupported_claim else "Only one writer can write at a time."
 
     class Search:
-        def search(self, query, limit=8):
+        def search(self, query: str, limit: int=8) -> SearchOutcome:
             log(search=query)
-            return [{"title": "Official example", "url": URL, "snippet": "One writer."}]
+            return search_outcome(query, [{"title": "Official example", "url": URL, "snippet": "One writer."}], limit=limit)
 
-        def fetch(self, url):
+        def fetch(self, url: str) -> dict[str, object]:
             log(fetch=url)
             return {"status": "ok", "url": url, "title": "Official example", "text": text, "truncated": False}
 
-        def close(self):
+        def close(self) -> None:
             pass
 
     class Provider:
         native_tools = native
 
-        def new_chat(self):
+        def new_chat(self) -> None:
             pass
 
-        def send_turn(self, prompt, tools):
+        def send_turn(self, prompt: str, tools: object) -> AssistantTurn:
             from codey.providers.base import AssistantTurn, ProviderToolCall
 
             row = json.loads(self.send(prompt))
@@ -84,16 +89,16 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
             return AssistantTurn(tool_calls=(ProviderToolCall(
                 f"call-{state().writer_attempt}-{state().logical_turn}", row["tool"], row["args"]),))
 
-        def send_tool_results(self, results, tools):
+        def send_tool_results(self, results: object, tools: object) -> object:
             return self.send_turn("\n".join(part for row in results for part in (row.content, row.user_content) if part), tools)
 
-        def acknowledge_tool_results(self, results, tools, timeout=None):
+        def acknowledge_tool_results(self, results: object, tools: object, timeout: float | None=None) -> AssistantTurn:
             from codey.providers.base import AssistantTurn
 
             log(ack=state().writer_attempt)
             return AssistantTurn()
 
-        def send(self, prompt):
+        def send(self, prompt: str) -> str:
             position = state()
             turn = position.logical_turn
             log(attempt=position.writer_attempt, turn=turn)
@@ -114,7 +119,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     store = KnowledgeStore(knowledge_root or root / "knowledge")
     original_publish = store.publish_note
 
-    def publish(note, *args, **kwargs):
+    def publish(note: object, *args: object, **kwargs: object) -> object:
         value = original_publish(note, *args, **kwargs)
         if note.type == "synthesis":
             log(publication=note.id)
@@ -124,7 +129,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
 
     store.publish_note = publish
     if boundary:
-        def committed(*_):
+        def committed(*_: object) -> None:
             position = state()
             publications = [effect for effect in durable.effects(run_id)
                             if effect.intent.get("tool_name") == "_publish_research_answer"]
@@ -154,7 +159,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
 
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
-def test_writer_publishes_once_without_model_review_and_replays_without_new_calls(tmp_path, native):
+def test_writer_publishes_once_without_model_review_and_replays_without_new_calls(tmp_path: Path, native: bool) -> None:
     from codey.knowledge.store import KnowledgeStore
     from codey.research.report_projection import validate_accepted_projection
 
@@ -180,7 +185,7 @@ def test_writer_publishes_once_without_model_review_and_replays_without_new_call
 
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("options", [{"bad_reference": True}, {"budget": 2}])
-def test_invalid_reference_or_budget_never_publishes(tmp_path, options):
+def test_invalid_reference_or_budget_never_publishes(tmp_path: Path, options: object) -> None:
     result = _run(tmp_path, **options)
     assert result.stop_reason != "done" and not result.synthesis_id
     assert result.completion_proof is None
@@ -189,7 +194,7 @@ def test_invalid_reference_or_budget_never_publishes(tmp_path, options):
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_wrong_interpretation_stays_unreviewed_after_workflow_completion(tmp_path):
+def test_wrong_interpretation_stays_unreviewed_after_workflow_completion(tmp_path: Path) -> None:
     result = _run(tmp_path, unsupported_claim=True)
     assert result.stop_reason == "done"  # Workflow completion deliberately does not certify entailment.
     assert result.semantic_review is None
@@ -199,7 +204,7 @@ def test_wrong_interpretation_stays_unreviewed_after_workflow_completion(tmp_pat
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_original_required_search_receipt_remains_the_completion_evidence(tmp_path):
+def test_original_required_search_receipt_remains_the_completion_evidence(tmp_path: Path) -> None:
     from codey.operations.task_session import turn_effect_id
     from codey.policies.tool_requirement import require_tool_success
 
@@ -213,7 +218,7 @@ def test_original_required_search_receipt_remains_the_completion_evidence(tmp_pa
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("boundary", ["provider_response_ready", "kernel_settled", "publication_admitted",
                                        "publication_committed", "publication_receipt"])
-def test_real_process_restart_reuses_writer_and_publication_receipts(tmp_path, boundary):
+def test_real_process_restart_reuses_writer_and_publication_receipts(tmp_path: Path, boundary: str) -> None:
     source = ("from pathlib import Path; from tests.test_research_deterministic_completion import _run; import sys; "
               f"_run(Path(sys.argv[1]), boundary=sys.argv[2], gap_answer={UNSUPPORTED_GAP_ANSWER!r}, gap_investigation=True)")
     child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary], capture_output=True, timeout=50)
@@ -232,7 +237,7 @@ def test_real_process_restart_reuses_writer_and_publication_receipts(tmp_path, b
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("gap_investigation", [False, True])
-def test_gap_text_is_canonical_in_publication_knowledge_and_replay(tmp_path, native, gap_investigation):
+def test_gap_text_is_canonical_in_publication_knowledge_and_replay(tmp_path: Path, native: bool, gap_investigation: bool) -> None:
     from codey.knowledge.store import KnowledgeStore
 
     result = _run(tmp_path, native=native, gap_answer=UNSUPPORTED_GAP_ANSWER, gap_investigation=gap_investigation)
@@ -261,7 +266,7 @@ def test_gap_text_is_canonical_in_publication_knowledge_and_replay(tmp_path, nat
         store.close()
 
 
-def test_original_task_accounting_rejects_deleted_unknown_and_duplicate_refs():
+def test_original_task_accounting_rejects_deleted_unknown_and_duplicate_refs() -> None:
     from codey.research.task_requirements import validate_task_accounting
 
     rows = [{"task_refs": ["r1"]}, {"task_refs": ["r2"]}]

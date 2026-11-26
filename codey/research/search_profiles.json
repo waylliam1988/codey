@@ -2,18 +2,48 @@
   "default_engine": "bing",
   "engines": {
     "bing": {
-      "search_url": "https://www.bing.com/search?q={query}",
       "result_selector": "li.b_algo",
-      "title_selector": "h2 a",
       "link_selector": "h2 a",
-      "snippet_selector": ".b_caption p"
+      "snippet_selector": ".b_caption p",
+      "home_url": "https://www.bing.com/",
+      "allowed_hosts": [
+        "www.bing.com",
+        "cn.bing.com",
+        "bing.com"
+      ],
+      "query_input": "#sb_form_q",
+      "submit": "label[for='sb_form_go'], #sb_form_go",
+      "result_root": "#b_results",
+      "empty_selector": "#b_results .b_no",
+      "challenge_selector": "#b_captcha, #captcha, form[action*='challenge'], iframe[src*='challenge']",
+      "empty_markers": [
+        "no results",
+        "did not match any",
+        "didn't match any",
+        "没有找到",
+        "找不到与",
+        "未找到"
+      ]
     },
     "duckduckgo": {
-      "search_url": "https://duckduckgo.com/html/?q={query}",
-      "result_selector": ".result",
-      "title_selector": ".result__a",
+      "result_selector": ".result:not(.result--no-result)",
       "link_selector": ".result__a",
-      "snippet_selector": ".result__snippet"
+      "snippet_selector": ".result__snippet",
+      "home_url": "https://html.duckduckgo.com/html/",
+      "allowed_hosts": [
+        "html.duckduckgo.com",
+        "duckduckgo.com"
+      ],
+      "query_input": "input[name='q']",
+      "submit": "input[type='submit'], button[type='submit']",
+      "result_root": "#links, .results",
+      "empty_selector": ".no-results, .result--no-result",
+      "challenge_selector": "#challenge-form, .anomaly-modal",
+      "empty_markers": [
+        "no results",
+        "no more results",
+        "没有找到"
+      ]
     }
   }
 }

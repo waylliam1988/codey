@@ -10,7 +10,9 @@ from codey.operations.completion_gate import evaluate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import result_metadata_from_text
+from codey.research.search_contracts import SearchOutcome
 from codey.runtime.core.models import ToolCall, ToolResult
+from tests.support.search_fixture import search_outcome
 from tests.test_explicit_web_entry_and_homepage import PageProvider
 
 URL = "https://example.com/"
@@ -84,15 +86,15 @@ def test_strict_research_keeps_its_existing_evidence_contract() -> None:
 
 
 @pytest.mark.parametrize("failure", ["policy", "offset", "fetch"])
-def test_only_actual_fetch_failure_can_be_used_for_source_gaps(monkeypatch, failure: str) -> None:
+def test_only_actual_fetch_failure_can_be_used_for_source_gaps(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
     from codey.operations.source_gaps import evaluate_source_coverage, validate_source_gaps
     from codey.operations.task_execution import ExecutionDelegate
     from codey.research.ledger import ResearchLedger
     from codey.research.tools import ResearchTools
 
     class Source:
-        def search(self, query: str, *, limit: int) -> list[dict[str, object]]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             if failure == "fetch":

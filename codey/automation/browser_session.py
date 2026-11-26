@@ -82,7 +82,16 @@ class BrowserSession:
                                  effect_ref, deadline,
                                  target_id=str(expected.get("target_id", "")) if isinstance(expected := (arguments or {}).get("expected_document"), dict) else "",
                                  frame_id=str(expected.get("frame_id", "")) if isinstance(expected, dict) else "")
-        return self._process.call(command, binary=binary, progress=progress)
+        packet = self._process.call(command, binary=binary, progress=progress)
+        caller_deadline = cancellation.current_deadline()
+        if (caller_deadline is not None and command.deadline == caller_deadline
+                and packet.message["completion"] == BrowserCompletion.FAILED.value):
+            output = BrowserToolOutput.read(packet.message["value"])
+            # The child timer may fire before the parent's next clock tick.
+            # Its deadline receipt is authoritative for the caller's budget.
+            if output.observation.get("reason") == "deadline":
+                raise cancellation.DeadlineExceeded("browser command deadline")
+        return packet
 
     def action(self, action: BrowserAction, arguments: JsonObject | None = None, *, binary: bytes = b"") -> BrowserToolOutput:
         packet = self.invoke(action, arguments, binary=binary)
@@ -149,8 +158,19 @@ class BrowserSession:
         return self.action(BrowserAction.WAIT, {"condition": "controls_changed", "value": "",
             "baseline_controls": controls, "timeout_ms": timeout_ms, "expected_document": document})
 
-    def evaluate(self, code: str) -> BrowserToolOutput:
-        return self.action(BrowserAction.EVALUATE, {"code": code})
+    def evaluate(self, code: str, *, main_frame: bool = False) -> BrowserToolOutput:
+        return self.action(BrowserAction.EVALUATE, {"code": code, "main_frame": main_frame})
+
+    def submit_form(self, query_selector: str, submit_selector: str, value: str,
+                    document: JsonObject) -> BrowserToolOutput:
+        return self.action(BrowserAction.SUBMIT_FORM, {"query_selector": query_selector,
+            "submit_selector": submit_selector, "value": value, "expected_document": document})
+
+    def diagnostics(self, *, clear: bool = False) -> tuple[JsonObject, ...]:
+        value = self._data(BrowserAction.DIAGNOSTICS, {"clear": clear})
+        if not isinstance(value, list):
+            raise ValueError("invalid browser diagnostics")
+        return tuple(decode_json_object(item) for item in value)
 
     def tab_list(self) -> BrowserToolOutput:
         return self.action(BrowserAction.TAB_LIST)

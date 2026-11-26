@@ -5,8 +5,8 @@ from pathlib import Path
 
 from codey.launcher.runtime import read_runtime
 from codey.research.answer_contract import ANSWER_TOOLS
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.search_factory import default_research_search_provider
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tool_contract import validate_tool_args
 from codey.research.web_sources import WebSourceProvider
 from codey.toolchain.tool_spec import custom_executor_for, spec_for_tool
@@ -19,8 +19,8 @@ BROWSER_EXPERIMENT_TOOLS = (
 def test_default_research_uses_only_production_provider_and_contracts() -> None:
     provider = default_research_search_provider()
     try:
-        assert type(provider.base_provider) is WebSourceProvider
-        assert type(provider.base_provider.browser_source) is BrowserSearchProvider
+        assert type(provider) is WebSourceProvider
+        assert type(provider.browser_source) is TaskBrowserSource
         for name in BROWSER_EXPERIMENT_TOOLS:
             spec = spec_for_tool(name)
             assert spec is not None and spec.executor == "browser"

@@ -50,6 +50,7 @@ from codey.providers.discovery import Discovery
 from codey.providers.local_discovery import LocalEndpoint
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
+from codey.research.search_contracts import SearchOutcome
 from codey.runs.ledger import read_ledger
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
@@ -61,6 +62,7 @@ from codey.workspace.changes import ChangeTracker
 from tests import http_context
 from tests.app_state import make_app_state
 from tests.operator_http import OperatorHTTPConnection
+from tests.support.search_fixture import search_outcome
 from tests.support.shell_approval import add_pending_approval
 
 VALID_SHA256 = "a" * 64
@@ -81,7 +83,7 @@ def _complete_shell_pending(base: dict) -> dict:
     return pending
 
 
-def _persist_approval(state, pending):
+def _persist_approval(state: object, pending: object) -> None:
     pending = dict(pending)
     pending.setdefault("provider", DEFAULT_PROVIDER_ID)
     pending.setdefault("max_turns", app_api.DEFAULT_MAX_TURNS)
@@ -91,12 +93,12 @@ def _persist_approval(state, pending):
     add_pending_approval(state, pending["id"], pending)
 
 
-def _run_task(*args, **kwargs):
+def _run_task(*args: object, **kwargs: object) -> object:
     kwargs.setdefault("get_state", http_context.get_context)
     return task_submit.run_task(*args, **kwargs)
 
 
-def _declare_protocol_window(provider):
+def _declare_protocol_window(provider: object) -> object:
     """Make a scripted provider's window capability explicit.
 
     Production activation intentionally rejects dynamically fabricated
@@ -120,7 +122,7 @@ def _clean_diff(path: str, *, old: str = "old", new: str = "new") -> str:
     )
 
 
-def _observable_edit_and_pass_events(*, path: str = "app.py"):
+def _observable_edit_and_pass_events(*, path: str = "app.py") -> object:
     """Tool events a real writer emits for one edit followed by a green check."""
     return (
         RunEvent.tool_finished(
@@ -136,7 +138,7 @@ def _observable_edit_and_pass_events(*, path: str = "app.py"):
     )
 
 
-def _scripted_agent_run(*steps):
+def _scripted_agent_run(*steps: object) -> object:
     """Multi-phase agent_run stand-in driven by (result, observed) pairs.
 
     Each step is ``(result, observed)``: ``result`` is returned (or raised,
@@ -147,7 +149,7 @@ def _scripted_agent_run(*steps):
     """
     steps_iter = iter(steps)
 
-    def _run(request: AgentRequest):
+    def _run(request: AgentRequest) -> object:
         result, observed = next(steps_iter)
         if observed:
             for event in _observable_edit_and_pass_events():
@@ -165,7 +167,7 @@ def _two_phase_writer(
     second_summary: str,
     second_turns: int = 2,
     second_checks_passed: bool = True,
-):
+) -> object:
     """First writer phase returns ``first``; the repair phase re-verifies."""
     return _scripted_agent_run(
         (first, False),
@@ -176,7 +178,7 @@ def _two_phase_writer(
     )
 
 
-def _verified_writer_agent_run(summary: str, *, turns: int = 3):
+def _verified_writer_agent_run(summary: str, *, turns: int = 3) -> object:
     """One writer phase that performs an edit and a green check."""
 
     return _scripted_agent_run((RunResult(summary, "done", turns, True, True), True))
@@ -196,15 +198,15 @@ class _DeclaredChatProvider:
         self._binding = ProviderBinding("deepseek", "fixture", "fixture", "chat", "fixture")
         self.window_ref = ProtocolWindowRef.new("fixture", self._binding)
 
-    def reset_window(self, expected_ref=None):
+    def reset_window(self, expected_ref: object=None) -> object:
         from codey.types.protocol_window import ProtocolWindowRef
         self.window_ref = ProtocolWindowRef.new(self.window_ref.session_id, self._binding)
         return self.window_ref
 
-    def load_durable_context(self, _messages):
+    def load_durable_context(self, _messages: object) -> object:
         return None
 
-    def close(self):
+    def close(self) -> None:
         return None
 
 
@@ -1021,7 +1023,7 @@ class ProviderStatusTests(unittest.TestCase):
         state = server.AppContext()
         event = threading.Event()
 
-        def fail_and_cancel(_provider_id: str):
+        def fail_and_cancel(_provider_id: str) -> None:
             event.set()
             raise RuntimeError("not open")
 
@@ -1786,7 +1788,7 @@ class WebAssetTests(unittest.TestCase):
 
 
 class LocalProviderApiTests(unittest.TestCase):
-    def _start_server(self):
+    def _start_server(self) -> object:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         context = server.AppContext()
         attachment = mock.patch.object(server.CodeyHTTPServer, "app_context", context)
@@ -3492,7 +3494,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.project_audit_mock = self.project_audit_patch.start()
         self._real_getaddrinfo = socket.getaddrinfo
 
-        def fixture_dns(host, *args, **kwargs):
+        def fixture_dns(host: object, *args: object, **kwargs: object) -> object:
             if str(host).lower() in {"127.0.0.1", "::1", "localhost"}:
                 return self._real_getaddrinfo(host, *args, **kwargs)
             return [(2, 1, 6, "", ("93.184.216.34", 443))]
@@ -3508,7 +3510,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.project_audit_patch.stop()
         self.consensus_patch.stop()
 
-    def _state(self, path) -> server.AppContext:
+    def _state(self, path: Path) -> server.AppContext:
         """Isolate research UI tests from the adapter self-repair worker."""
 
         state = server.AppContext(path)
@@ -3806,16 +3808,16 @@ class SessionThreadingTests(unittest.TestCase):
         first = mock.Mock()
         second = mock.Mock()
 
-        def assert_new_chat(*_args, **_kwargs):
+        def assert_new_chat(*_args: object, **_kwargs: object) -> None:
             self.assertFalse(provider_controls.can_doctor())
             self.assertFalse(provider_controls.can_teach())
 
-        def fail_send(*_args, **_kwargs):
+        def fail_send(*_args: object, **_kwargs: object) -> None:
             self.assertFalse(provider_controls.can_doctor())
             self.assertFalse(provider_controls.can_teach())
             raise TimeoutError("failed")
 
-        def select_send(*_args, **_kwargs):
+        def select_send(*_args: object, **_kwargs: object) -> str:
             self.assertFalse(provider_controls.can_doctor())
             self.assertFalse(provider_controls.can_teach())
             return '{"candidate_id":"f1"}'
@@ -3976,7 +3978,7 @@ class SessionThreadingTests(unittest.TestCase):
                 stderr_truncated=False,
             )
 
-            def fake_agent_run(request: AgentRequest):
+            def fake_agent_run(request: AgentRequest) -> object:
                 self.assertEqual(request.permission_profile, "coding_writer")
                 tool_fns = request.tool_fns
                 self.assertIsNotNone(tool_fns)
@@ -4278,7 +4280,7 @@ class SessionThreadingTests(unittest.TestCase):
             def new_chat(self) -> None:
                 return None
 
-            def send(self, *_args, **_kwargs):
+            def send(self, *_args: object, **_kwargs: object) -> str:
                 return self.send_result
 
         provider = ShellProvider()
@@ -4311,7 +4313,7 @@ class SessionThreadingTests(unittest.TestCase):
             def new_chat(self) -> None:
                 return None
 
-            def send(self, *_args, **_kwargs):
+            def send(self, *_args: object, **_kwargs: object) -> str:
                 return json.dumps({
                     "tool": "shell",
                     "args": {"path": ".", "command": command},
@@ -4381,8 +4383,8 @@ class SessionThreadingTests(unittest.TestCase):
         pdf_url = "https://cmenaf.org/wp-content/uploads/report.pdf"
 
         class Search:
-            def search(self, query, limit=8):
-                return [
+            def search(self, query: str, limit: int=8) -> SearchOutcome:
+                return search_outcome(query, [
                     {
                         "title": "PDF report",
                         "url": pdf_url,
@@ -4393,9 +4395,9 @@ class SessionThreadingTests(unittest.TestCase):
                         "url": html_url,
                         "snippet": "Al Jazeera outlines four possible paths after talks stumble.",
                     },
-                ]
+                ], limit=limit)
 
-            def fetch(self, url):
+            def fetch(self, url: str) -> dict[str, object]:
                 if url == pdf_url:
                     return {"status": "ok",
                         "url": url,
@@ -4417,7 +4419,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "truncated": False,
                 }
 
-            def close(self):
+            def close(self) -> None:
                 pass
 
 
@@ -4514,16 +4516,16 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_followup_research_intent_includes_previous_research_context(self) -> None:
         class Search:
-            def search(self, query, limit=8):
-                return [
+            def search(self, query: str, limit: int=8) -> SearchOutcome:
+                return search_outcome(query, [
                     {
                         "title": "Storage source",
                         "url": "https://example.com/storage",
                         "snippet": "The storage plan source supports the SQLite-backed plan.",
                     }
-                ]
+                ], limit=limit)
 
-            def fetch(self, url):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
                     "url": url,
                     "title": "Helium source",
@@ -4531,7 +4533,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "truncated": False,
                 }
 
-            def close(self):
+            def close(self) -> None:
                 pass
 
         with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
@@ -5234,7 +5236,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
 
-            def fake_agent_run(request: AgentRequest):
+            def fake_agent_run(request: AgentRequest) -> object:
                 on_event = request.on_event
                 on_event(
                     RunEvent.tool_finished(
@@ -5856,7 +5858,7 @@ class SessionThreadingTests(unittest.TestCase):
         reviewer.location = "https://chat.stepfun.com/chats/"
         states: list[tuple[bool, bool]] = []
 
-        def send_review(_prompt, timeout=None):
+        def send_review(_prompt: str, timeout: float | None=None) -> str:
             del timeout
             states.append(
                 (
@@ -6099,7 +6101,7 @@ class SessionThreadingTests(unittest.TestCase):
             "diff": _clean_diff("app.py", old="print('existing')", new="new"),
         }
 
-        def write_and_finish(request: AgentRequest):
+        def write_and_finish(request: AgentRequest) -> object:
             project_root = request.project
             (project_root / "tests").mkdir()
             (project_root / "tests" / "test_app.py").write_text(
@@ -6445,7 +6447,7 @@ class SessionThreadingTests(unittest.TestCase):
         provider.location = "https://chat.qwen.ai/"
         state.set_provider_session("qwen", "session-1")
 
-        def cancelled_agent(request: AgentRequest):
+        def cancelled_agent(request: AgentRequest) -> None:
             request.on_event(RunEvent.turn_started(3, "partial reply"))
             raise cancellation.TaskCancelled("task stopped")
 
@@ -6479,7 +6481,7 @@ class SessionThreadingTests(unittest.TestCase):
         provider.name = "Qwen Studio"
         state.set_provider_session("qwen", "session-1")
 
-        def stopped_agent(*_args, **_kwargs):
+        def stopped_agent(*_args: object, **_kwargs: object) -> object:
             state.run_registry.stop_flag.set()
             return RunResult("stopped", "stopped", 2, False)
 
@@ -6528,7 +6530,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 
-            def fake_agent_run(request: AgentRequest):
+            def fake_agent_run(request: AgentRequest) -> object:
                 tracker = request.change_tracker
                 assert tracker is not None
                 tracker.capture_before("app.py")
@@ -6586,16 +6588,16 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_run_task_with_research_intent_uses_research_runner(self) -> None:
         class Search:
-            def search(self, query, limit=8):
-                return [
+            def search(self, query: str, limit: int=8) -> SearchOutcome:
+                return search_outcome(query, [
                     {
                         "title": "Helium source",
                         "url": "https://example.com/helium",
                         "snippet": "Helium data",
                     }
-                ]
+                ], limit=limit)
 
-            def fetch(self, url):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
                     "url": url,
                     "title": "Helium source",
@@ -6603,7 +6605,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "truncated": False,
                 }
 
-            def close(self):
+            def close(self) -> None:
                 pass
 
         with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
@@ -6699,7 +6701,7 @@ class UiLaunchTests(unittest.TestCase):
         client = mock.Mock()
         client.lifecycle.return_value = {"url": "http://127.0.0.1:43210/#codey_bootstrap=test"}
         view = mock.MagicMock()
-        def event_loop(**kwargs):
+        def event_loop(**kwargs: object) -> None:
             startup = view.create_window.call_args.kwargs['js_api']._startup
             startup.shown()
             kwargs['func']()

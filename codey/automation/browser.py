@@ -36,6 +36,10 @@ MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 STEPFUN_URL = "https://chat.stepfun.com/chats/"
 GLM_URL = "https://chatglm.cn/"
 DEFAULT_PORT = 9222
+CONTROLLED_BROWSER_FLAGS = (
+    "--no-first-run", "--no-default-browser-check",
+    "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
+)
 CDP_CONNECT_TIMEOUT_MS = 20_000
 CDP_PORT_WAIT_TIMEOUT = 20.0
 WARMUP_CDP_CONNECT_TIMEOUT_MS = 8_000
@@ -174,8 +178,7 @@ def _launch_browser(
         str(executable),
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile_path}",
-        "--no-first-run",
-        "--no-default-browser-check",
+        *CONTROLLED_BROWSER_FLAGS,
     ]
     args.append(start_url)
     creationflags = 0

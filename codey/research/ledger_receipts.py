@@ -50,9 +50,18 @@ def search_observation(observation: object) -> SearchRecord:
     if set(observation) != {"search"}:
         raise ValueError("missing or invalid search observation")
     search = observation["search"]
-    if isinstance(search, dict):
+    if isinstance(search, dict) and "version" not in search:
         search.setdefault("attempts", [])  # Legacy receipts did not observe search provenance.
+        search.update(version=2, state="unknown", failure_kind="")
     row = _record_fields(search, SearchRecord)
+    if require_json_integer(row["version"], "search version") != 2:
+        raise ValueError("unsupported search record version")
+    state = require_json_string(row["state"], "search state")
+    if state not in {"unknown", "hits", "empty", "filtered_empty", "failed"}:
+        raise ValueError("invalid search record state")
+    failure = require_json_string(row["failure_kind"], "search failure")
+    if (state == "failed") != bool(failure):
+        raise ValueError("search failure differs from state")
     if type(row["query"]) is not str or not row["query"].strip():
         raise ValueError("invalid search observation query")
     _timestamp(row["timestamp"])
@@ -71,9 +80,16 @@ def search_observation(observation: object) -> SearchRecord:
     attempts = row["attempts"]
     if not isinstance(attempts, list):
         raise ValueError("invalid search attempts")
+    decoded_attempts = tuple(decode_search_attempt(item) for item in attempts)
+    if state != "unknown" and ((state == "hits") != bool(results)):
+        raise ValueError("search state differs from its recorded results")
+    if state == "empty" and not any(item.state == "empty" for item in decoded_attempts):
+        raise ValueError("empty search requires a completed attempt")
+    if state == "filtered_empty" and not any(item.rejected_urls for item in decoded_attempts):
+        raise ValueError("filtered search requires rejected candidates")
     return SearchRecord(query=require_json_string(row["query"], "query"),
         timestamp=require_json_string(row["timestamp"], "timestamp"), results=tuple(results),
-        attempts=tuple(decode_search_attempt(item) for item in attempts))
+        attempts=decoded_attempts, state=state, failure_kind=failure)
 
 
 def source_search_observation(observation: object) -> SourceSearchObservation:

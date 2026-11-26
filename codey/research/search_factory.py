@@ -8,12 +8,12 @@ unified kernel.
 
 from __future__ import annotations
 
-from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.connector_search import ScholarlySources
 from codey.research.web_sources import WebSourceProvider
 
 
-def default_research_search_provider() -> ConnectorAwareSearchProvider:
-    return ConnectorAwareSearchProvider(WebSourceProvider())
+def default_research_search_provider() -> WebSourceProvider:
+    return WebSourceProvider(scholarly=ScholarlySources())
 
 
 __all__ = ["default_research_search_provider"]

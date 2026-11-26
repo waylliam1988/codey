@@ -14,6 +14,7 @@ from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPoli
 from codey.research.answer_contract import answer_scope, submit_answer
 from codey.research.answer_report import AnswerReport
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.source_reading import render_source_read
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -31,7 +32,7 @@ class _StaticSource:
     def __init__(self) -> None:
         self.fetches = 0
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
         raise AssertionError("completion must not search")
 
     def fetch(self, url: str) -> dict[str, object]:

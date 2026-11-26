@@ -9,14 +9,16 @@ from unittest.mock import Mock
 import pytest
 
 from codey.research import source_download
-from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.connector_search import ScholarlySources
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome, SearchState, failed_search
 from codey.research.search_factory import default_research_search_provider
+from codey.research.search_profiles import SearchProfile
 from codey.research.source_acquisition import acquisition_observation, with_attempt
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import decode_json_object
 from tests.test_chat_web_provider import Browser
 
 URL = "https://example.com/article"
@@ -165,20 +167,17 @@ def test_expired_total_deadline_does_not_start_browser(monkeypatch: pytest.Monke
 
 def test_research_factory_reuses_shared_acquisition_and_preserves_search_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
     provider = default_research_search_provider()
-    assert isinstance(provider.base_provider, WebSourceProvider)
-    assert provider.base_provider._browser is None
+    assert isinstance(provider, WebSourceProvider)
+    assert isinstance(provider.scholarly, ScholarlySources)
+    assert provider._browser is None
     browser = Browser()
-    browser.last_search_errors = [{"engine": "bing", "failure_kind": "search_challenge", "detail": "verification"}]
-    shared = WebSourceProvider(browser_factory=lambda: browser)
-
-    def fail(query: str, *, limit: int) -> list[JsonObject]:
-        raise RuntimeError("search verification")
-
+    def fail(query: str, *, limit: int, profile: SearchProfile, deadline: float) -> SearchOutcome:
+        return failed_search(query, profile.name, "search_challenge", "verification")
     monkeypatch.setattr(browser, "search", fail)
-    research = ConnectorAwareSearchProvider(shared, connector_ids=(), rate_limit=False)
-    with pytest.raises(RuntimeError, match="verification"):
-        research.search("field record")
-    assert research.last_search_failure == browser.last_search_errors[0]
-    assert shared.last_search_errors is browser.last_search_errors
-    research.close()
+    shared = WebSourceProvider(browser_factory=lambda: browser)
+    outcome = shared.search("field record")
+    assert outcome.state == SearchState.FAILED
+    assert len(outcome.errors) == 2
+    assert shared.last_search_failure == outcome.errors[-1]
+    shared.close()
     assert browser.closed == 1

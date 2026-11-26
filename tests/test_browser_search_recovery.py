@@ -1,202 +1,93 @@
-"""Search recovery covers page creation as well as navigation failures."""
-from types import SimpleNamespace
-from typing import cast
-from unittest import mock
+"""Resource bursts, cancellation and shared DNS on the production runtime."""
+from __future__ import annotations
+
+import json
+import socket
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from playwright.sync_api import Page
 
-from codey.automation.browser import Session
-from codey.research import browser_search
-from codey.research.browser_search import BrowserSearchProvider
+from codey.automation.browser_contracts import RouteDecision
+from codey.policies.network import NetworkPolicy, check_browser_url
+from codey.research.search_contracts import SearchState
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.runtime.core import cancellation
-from codey.types.json_value import JsonObject
+from tests.support.search_fixture import FORM, RESULT, SearchFixture
+from tests.support.task_browser import browser_for
 
 
-def test_next_search_replaces_closed_session_seed_page() -> None:
-    closed = mock.Mock()
-    closed.is_closed.return_value = True
-    replacement = mock.Mock()
-    replacement._codey_research_guarded = False
-    context = SimpleNamespace(new_page=mock.Mock(return_value=replacement))
-    closed.context = context
-    provider = BrowserSearchProvider()
-    provider._session = Session(mock.Mock(), mock.Mock(), cast(Page, closed), owns_page=True)
-
-    assert provider._ensure_search_page_on_browser_thread() is replacement
-    context.new_page.assert_called_once_with()
-    replacement.route.assert_called_once()
-
-
-def test_closed_context_during_page_preparation_reconnects_and_retries() -> None:
-    provider = BrowserSearchProvider()
-    provider._ensure_search_page_on_browser_thread = mock.Mock(
-        side_effect=RuntimeError("Page.route: Target page, context or browser has been closed")
-    )
-    provider._replace_search_page_on_browser_thread = mock.Mock(return_value=object())
-    provider._close_on_browser_thread = mock.Mock()
-    provider._discard_search_page_on_browser_thread = mock.Mock()
-    hits: list[JsonObject] = [{"title": "Recovered", "url": "https://example.com/report"}]
-    provider._search_page_results_on_browser_thread = mock.Mock(return_value=hits)
-
-    assert provider._search_on_browser_thread("helium", 3) == hits
-    provider._close_on_browser_thread.assert_called_once_with()
-    assert len(provider.last_search_errors) == 1
+def test_resource_burst_above_tool_command_limit_does_not_abort_page_assets() -> None:
+    fixture = SearchFixture()
+    assets: list[str] = []
+    def route(reply: RouteDecision) -> None:
+        parsed = urlsplit(reply.request.url)
+        if parsed.hostname == "cdn.example.com":
+            assets.append(parsed.path)
+            time.sleep(0.015)
+            reply.fulfill(content_type="application/javascript", body="window.loaded++; if(window.loaded===96) document.querySelector('#b_results').innerHTML=" + json.dumps(RESULT) + ";")
+        elif parse_qs(parsed.query).get("q"):
+            body = FORM.format(query="burst") + "<ol id='b_results'></ol><script>window.loaded=0</script>"
+            body += "".join(f"<script defer src='https://cdn.example.com/{i}.js'></script>" for i in range(96))
+            reply.fulfill(content_type="text/html", body=body)
+        else:
+            fixture.route(reply)
+    browser = browser_for(route)
+    try:
+        outcome = TaskBrowserSource(browser, engine="bing").search("burst", deadline=time.monotonic() + 12)
+        assert outcome.state == SearchState.HITS, outcome
+        assert len(assets) == 96
+        assert not any(event.get("kind") == "blocked" for event in browser.diagnostics())
+    finally:
+        browser.close()
 
 
-def test_closed_fetch_context_reconnects_before_navigation() -> None:
-    provider = BrowserSearchProvider()
-    replacement = object()
-    provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=[
-        RuntimeError("BrowserContext.new_page: Target page, context or browser has been closed"), replacement,
-    ])
-    provider._close_on_browser_thread = mock.Mock()
-    with mock.patch.object(browser_search, "check_fetch_url", return_value=""):
-        assert provider._prepare_fetch_page_on_browser_thread("https://example.com/report") is replacement
-    provider._close_on_browser_thread.assert_called_once_with()
-    assert provider._ensure_fetch_page_on_browser_thread.call_count == 2
+def test_concurrent_same_origin_checks_share_one_system_dns_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    def resolve(host: str, port: int, *, proto: int) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+        calls.append(host)
+        time.sleep(0.1)
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    policy = NetworkPolicy()
+    def check(index: int) -> str | None:
+        return policy.check_url(f"https://example.com/{index}.js", use_cache=True)
+    with ThreadPoolExecutor(max_workers=8) as workers:
+        assert list(workers.map(check, range(16))) == [None] * 16
+    assert calls == ["example.com"]
 
 
-@pytest.mark.parametrize("error", [
-    cancellation.TaskCancelled("stop"), cancellation.DeadlineExceeded("expired"),
-    RuntimeError("permission denied"),
+@pytest.mark.parametrize("url,kind,navigation,allowed", [
+    ("data:image/png;base64,AA==", "image", False, True),
+    ("blob:https://example.com/asset", "image", False, True),
+    ("data:text/html,document", "document", True, False),
+    ("file:///C:/private", "image", False, False),
+    ("http://127.0.0.1/private", "xhr", False, False),
+    ("http://192.168.1.1/", "document", True, False),
 ])
-def test_fetch_preparation_does_not_retry_cancellation_or_other_errors(error: Exception) -> None:
-    provider = BrowserSearchProvider()
-    provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=error)
-    provider._close_on_browser_thread = mock.Mock()
-    with pytest.raises(type(error)):
-        provider._prepare_fetch_page_on_browser_thread("https://example.com/report")
-    provider._close_on_browser_thread.assert_not_called()
-    assert provider._ensure_fetch_page_on_browser_thread.call_count == 1
+def test_inline_resource_exception_does_not_open_private_network(url: str, kind: str, navigation: bool, allowed: bool) -> None:
+    assert (check_browser_url(url, kind, navigation) is None) is allowed
 
 
-def test_fetch_preparation_reconnect_is_bounded() -> None:
-    provider = BrowserSearchProvider()
-    provider._ensure_fetch_page_on_browser_thread = mock.Mock(
-        side_effect=RuntimeError("Target page, context or browser has been closed"))
-    provider._close_on_browser_thread = mock.Mock()
-    with pytest.raises(RuntimeError, match="has been closed"):
-        provider._prepare_fetch_page_on_browser_thread("https://example.com/report")
-    assert provider._ensure_fetch_page_on_browser_thread.call_count == 2
-    provider._close_on_browser_thread.assert_called_once_with()
-
-
-def test_disconnected_browser_is_reopened() -> None:
-    provider = BrowserSearchProvider()
-    old = mock.Mock()
-    old.browser.is_connected.return_value = False
-    provider._session = old
-    reopened = Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=True)
-    with mock.patch.object(browser_search, "open_chat_page", return_value=reopened):
-        assert provider._ensure_session_on_browser_thread() is reopened
-    old.close.assert_called_once_with()
-
-
-def test_first_engine_timeout_reserves_time_for_browser_fallback() -> None:
-    provider = BrowserSearchProvider()
-    provider._engine_order = ("bing", "duckduckgo")
-    provider._ensure_search_page_on_browser_thread = mock.Mock(return_value=object())
-    provider._replace_search_page_on_browser_thread = mock.Mock(return_value=object())
-    provider._discard_search_page_on_browser_thread = mock.Mock()
-    now = [0.0]
-    engines: list[str] = []
-    hits: list[JsonObject] = [{"title": "Recovered", "url": "https://example.com/report"}]
-
-    def search_page(*_args: object, engine: str, deadline: float, **_kwargs: object) -> list[JsonObject]:
-        engines.append(engine)
-        if engine == "bing":
-            assert 0 < deadline < browser_search._SEARCH_TOTAL_TIMEOUT_SECONDS
-            now[0] = deadline
-            raise TimeoutError("navigation timed out")
-        return hits
-
-    with (
-        mock.patch.object(browser_search.time, "monotonic", side_effect=lambda: now[0]),
-        mock.patch.object(provider, "_search_page_results_on_browser_thread", side_effect=search_page),
-    ):
-        assert provider._search_on_browser_thread("helium", 3) == hits
-    assert engines == ["bing", "duckduckgo"]
-
-
-@pytest.mark.parametrize("error", [cancellation.TaskCancelled("stop"), cancellation.DeadlineExceeded("expired")])
-def test_cancellation_during_page_creation_does_not_retry(error: Exception) -> None:
-    provider = BrowserSearchProvider()
-    provider._ensure_search_page_on_browser_thread = mock.Mock(side_effect=error)
-    provider._replace_search_page_on_browser_thread = mock.Mock()
-    with pytest.raises(type(error)):
-        provider._search_on_browser_thread("helium", 3)
-    provider._replace_search_page_on_browser_thread.assert_not_called()
-
-
-def test_failed_query_does_not_poison_the_next_query_on_the_same_provider() -> None:
-    context = SimpleNamespace()
-
-    def new_page() -> mock.Mock:
-        page = mock.Mock(context=context, _codey_research_guarded=False)
-        page.is_closed.return_value = False
-        page.close.side_effect = lambda: setattr(page.is_closed, "return_value", True)
-
-        def route(*_args: object) -> None:
-            if page.is_closed():
-                raise RuntimeError("Page.route: Target page, context or browser has been closed")
-
-        page.route.side_effect = route
-        return page
-
-    context.new_page = mock.Mock(side_effect=new_page)
-    seed = new_page()
-    provider = BrowserSearchProvider(engine="bing")
-    provider._session = Session(mock.Mock(), mock.Mock(), cast(Page, seed), owns_page=True)
-    provider._register_owned_page_on_browser_thread(seed)
-    hits: list[JsonObject] = [{"title": "Recovered", "url": "https://example.com/report"}]
-
-    def search_page(_page: mock.Mock, query: str, *_args: object, **_kwargs: object) -> list[JsonObject]:
-        if query == "first query":
-            raise TimeoutError("navigation timed out")
-        assert not _page.is_closed()
-        return hits
-
-    with mock.patch.object(provider, "_search_page_results_on_browser_thread", side_effect=search_page):
-        with pytest.raises(browser_search.SearchUnavailableError):
-            provider._search_on_browser_thread("first query", 3)
-        assert seed.is_closed()
-        assert provider._search_on_browser_thread("next query", 3) == hits
-
-
-def test_persistent_page_creation_failure_stops_with_a_classified_error() -> None:
-    provider = BrowserSearchProvider()
-    failure = RuntimeError("Page.route: Target page, context or browser has been closed")
-    provider._ensure_search_page_on_browser_thread = mock.Mock(side_effect=failure)
-    provider._replace_search_page_on_browser_thread = mock.Mock(side_effect=failure)
-    provider._close_on_browser_thread = mock.Mock()
-
-    with pytest.raises(browser_search.SearchUnavailableError):
-        provider._search_on_browser_thread("helium", 3)
-
-    attempts = 1 + provider._replace_search_page_on_browser_thread.call_count
-    assert attempts == len(provider._engine_order) * browser_search._SEARCH_NAV_ATTEMPTS
-    assert len(provider.last_search_errors) == attempts
-
-
-def test_result_blocks_can_arrive_after_navigation_without_a_false_empty_result() -> None:
-    provider = BrowserSearchProvider(engine="bing")
-    page = mock.Mock(url="https://www.bing.com/search?q=database")
-    link = mock.Mock()
-    link.get_attribute.return_value = "https://sqlite.org/wal.html"
-    link.inner_text.return_value = "SQLite WAL"
-    block = mock.Mock()
-    block.query_selector.return_value = link
-    blocks: list[mock.Mock] = []
-
-    def appeared(*_args: object, **kwargs: object) -> None:
-        assert kwargs["state"] == "attached"
-        timeout = kwargs["timeout"]
-        assert isinstance(timeout, int) and 0 < timeout <= 2500
-        blocks.append(block)
-
-    page.wait_for_selector.side_effect = appeared
-    page.query_selector_all.side_effect = lambda _selector: blocks
-    hits = provider._search_page_results_on_browser_thread(page, "database", 3)
-    assert hits[0]["url"] == "https://sqlite.org/wal.html"
-    page.goto.assert_called_once()
+def test_cancelled_search_does_not_retry_or_poison_next_query() -> None:
+    fixture = SearchFixture()
+    browser = browser_for(fixture.route)
+    timer: threading.Timer | None = None
+    try:
+        source = TaskBrowserSource(browser, engine="bing")
+        assert source.search("warm").state == SearchState.HITS
+        fixture.mode = "shell"
+        stop = threading.Event()
+        timer = threading.Timer(0.5, stop.set)
+        timer.start()
+        with cancellation.scope(stop), pytest.raises(cancellation.TaskCancelled):
+            source.search("cancelled")
+        fixture.mode = "hits"
+        assert source.search("recovered").state == SearchState.HITS
+    finally:
+        if timer is not None:
+            timer.cancel()
+            timer.join()
+        browser.close()

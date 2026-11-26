@@ -4,8 +4,9 @@ from __future__ import annotations
 import pytest
 
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_reading import render_source_read
-from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 from tools.browser_experiment_sources import BrowserCaptureGateway
 
 URL = "https://example.com/article"
@@ -16,8 +17,8 @@ class CaptureProvider:
         self.capture = capture
         self.fetches = 0
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.fetches += 1

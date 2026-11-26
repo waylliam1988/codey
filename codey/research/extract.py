@@ -31,6 +31,7 @@ class _Extractor(HTMLParser):
         self._in_head = False
         self._title_seen = False
         self._hidden_tags: list[str] = []
+        self.password_input = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
@@ -40,6 +41,8 @@ class _Extractor(HTMLParser):
             if tag not in _VOID_TAGS:
                 self._hidden_tags.append(tag)
             return
+        if tag == "input" and (attributes.get("type") or "").lower() == "password" and not self._skip_depth:
+            self.password_input = True
         if tag == "head":
             self._in_head = True
         if tag in _SKIP_TAGS:
@@ -102,6 +105,17 @@ def extract_title(html: str) -> str:
     with contextlib.suppress(Exception):
         parser.feed(html or "")
     return _SPACES_RE.sub(" ", parser.title).strip()
+
+
+def has_password_input(html: str) -> bool:
+    parser = _Extractor()
+    parser.feed(html)
+    return parser.password_input
+
+
+def requires_authentication(text: str, password_present: bool) -> bool:
+    return (password_present and len(text) < 1500
+            and any(marker in text.casefold() for marker in ("log in", "sign in", "登录", "登入")))
 
 
 class _ApplicationShellParser(_Extractor):

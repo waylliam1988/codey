@@ -20,6 +20,9 @@ from statistics import median
 from typing import Literal
 from unittest.mock import patch
 
+from codey.research.search_contracts import SearchOutcome
+from tests.support.search_fixture import search_outcome
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -97,7 +100,7 @@ def fixed_sources(case: Case, directory: Path) -> Iterator[None]:
     The query rule is a declared network fixture, never production rewriting.
     Raw source data has no instruction to open, continue or finish the task.
     """
-    def search(provider: WebSourceProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
+    def search(provider: WebSourceProvider, query: str, *, limit: int = 8) -> SearchOutcome:
         compact = "".join(query.split())
         core = case.entity in compact and len(compact) <= len(case.entity) + 2
         results: list[JsonObject]
@@ -108,7 +111,7 @@ def fixed_sources(case: Case, directory: Path) -> Iterator[None]:
             results = [{"title": case.title, "url": case.url, "snippet": "街区资讯、交通与主题介绍。"}]
         with (directory / "search-responses.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({"query": query, "results": results}, ensure_ascii=False) + "\n")
-        return results[:limit]
+        return search_outcome(query, results[:limit], limit=limit)
 
     def fetch(url: str) -> dict[str, object]:
         if url == case.url:

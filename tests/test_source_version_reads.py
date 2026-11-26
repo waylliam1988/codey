@@ -10,13 +10,14 @@ from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_snapshots import captured_source
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.types.json_value import JsonObject
 from tests.support.provider_actions import ProviderActions
 from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.search_fixture import search_outcome
 from tests.support.session_projection import restore_task_session
 from tests.test_committed_research_projection import runtime
 from tests.test_research import fake_pypdf
@@ -29,8 +30,8 @@ class ChangingSource:
         self.body = "Original version.\n\n" + "Original paragraph about saffron, exactly 17 grams.\n\n" * 180
         self.calls = 0
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.calls += 1

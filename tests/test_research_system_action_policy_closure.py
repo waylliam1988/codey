@@ -10,23 +10,25 @@ import pytest
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.policies.task_policy import TaskPolicy
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
+from tests.support.search_fixture import search_outcome
 
 
 class _CountingSearch:
-    def __init__(self):
+    def __init__(self) -> None:
         self.queries: list[str] = []
         self.closed = False
 
-    def search(self, query: str, limit: int = 6):
+    def search(self, query: str, limit: int = 6) -> SearchOutcome:
         self.queries.append(query)
-        return []
+        return search_outcome(query, [], limit=limit)
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
 
-def _make_tools(search, session_id="s-sysact") -> ResearchTools:
+def _make_tools(search: object, session_id: str="s-sysact") -> ResearchTools:
     tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
     root = Path(tmp.name)
     store = KnowledgeStore(root / "knowledge")
@@ -34,7 +36,7 @@ def _make_tools(search, session_id="s-sysact") -> ResearchTools:
         search=search, store=store, changes=KnowledgeChanges(root=store.root),
         session_id=session_id, project="",
     )
-    tools._tmp_guard = tmp  # type: ignore[attr-defined]
+    tools._tmp_guard = tmp
     return tools
 
 
@@ -48,13 +50,13 @@ def _knowledge_files(store: KnowledgeStore) -> list[Path]:
     return [p for p in Path(store.root).rglob("*.md") if p.is_file()]
 
 
-def test_persist_synthesis_policy_is_required_and_none_is_denied():
+def test_persist_synthesis_policy_is_required_and_none_is_denied() -> None:
     from codey.operations.research_iteration import _persist_synthesis
 
     search = _CountingSearch()
     tools = _make_tools(search)
     with pytest.raises(TypeError):
-        _persist_synthesis(  # type: ignore[call-arg]
+        _persist_synthesis(
             tools, "q", "summary", session_id="s", project="",
             run_id="run-syn-1", on_event=lambda _e: None,
         )
@@ -67,7 +69,7 @@ def test_persist_synthesis_policy_is_required_and_none_is_denied():
     assert list(tools.created_ids) == []
 
 
-def test_synthesis_write_then_retry_keeps_single_note():
+def test_synthesis_write_then_retry_keeps_single_note() -> None:
     from codey.operations.research_iteration import _persist_synthesis
     from codey.research.source_document import SourceDocument
 

@@ -7,22 +7,24 @@ from pathlib import Path
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.policies.task_policy import TaskPolicy
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
+from tests.support.search_fixture import search_outcome
 
 
 class _CountingSearch:
-    def __init__(self):
+    def __init__(self) -> None:
         self.queries: list[str] = []
 
-    def search(self, query: str, limit: int = 6):
+    def search(self, query: str, limit: int = 6) -> SearchOutcome:
         self.queries.append(query)
-        return []
+        return search_outcome(query, [], limit=limit)
 
-    def close(self):
+    def close(self) -> None:
         pass
 
 
-def _make_tools(search) -> ResearchTools:
+def _make_tools(search: object) -> ResearchTools:
     tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
     root = Path(tmp.name)
     store = KnowledgeStore(root / "knowledge")
@@ -33,7 +35,7 @@ def _make_tools(search) -> ResearchTools:
         session_id="s-policy",
         project="",
     )
-    tools._tmp_guard = tmp  # type: ignore[attr-defined]
+    tools._tmp_guard = tmp
     return tools
 
 

@@ -17,7 +17,9 @@ from codey.automation.browser_contracts import (
     BrowserConfig,
     BrowserToolOutput,
 )
-from codey.automation.browser_process import BrowserProcess, Pending
+from codey.automation.browser_ipc import BrowserPacket
+from codey.automation.browser_process import BrowserProcess, Pending, Progress
+from codey.automation.browser_session import BrowserSession
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, decode_json_object
 from tests.support.real_cdp import chromium_executable
@@ -32,6 +34,24 @@ def command(action: BrowserAction, args: JsonObject | None = None) -> BrowserCom
     return BrowserCommand(uuid4().hex, action, args or {}, "task", "resource", "effect", time.monotonic() + 30)
 
 
+@pytest.mark.parametrize("caller_budget", [False, True])
+def test_facade_respects_worker_deadline_receipt_before_parent_clock_expires(
+    monkeypatch: pytest.MonkeyPatch, caller_budget: bool,
+) -> None:
+    def expired(self: BrowserProcess, command: BrowserCommand, *, binary: bytes = b"",
+                progress: Progress | None = None) -> BrowserPacket:
+        assert command.deadline > time.monotonic()
+        output = BrowserToolOutput("ERROR: deadline", False, {"reason": "deadline", "delivery": "uncertain"})
+        return BrowserPacket({"completion": "failed", "value": output.payload()})
+    monkeypatch.setattr(BrowserProcess, "call", expired)
+    browser = BrowserSession()
+    if caller_budget:
+        with cancellation.deadline_scope(time.monotonic() + 10), pytest.raises(cancellation.DeadlineExceeded):
+            browser.navigate("https://example.com/")
+    else:
+        assert not browser.navigate("https://example.com/").ok
+
+
 def test_saturated_queue_rejects_the_new_command_before_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     worker = BrowserProcess(BrowserConfig(), "task", "resource")
     monkeypatch.setattr(worker, "_start", lambda: None)
@@ -41,6 +61,27 @@ def test_saturated_queue_rejects_the_new_command_before_dispatch(monkeypatch: py
     assert result.observation["delivery"] == "not_delivered"
     assert len(worker._pending) == MAX_PENDING_COMMANDS
     assert worker._process is None
+
+
+def test_close_services_inflight_network_replies_before_cleanup_acknowledgement() -> None:
+    started = threading.Event()
+    def delayed_policy(request: JsonObject) -> JsonObject:
+        started.set()
+        time.sleep(0.03)
+        return {"decision": "abort", "reason": "fixture_denied"}
+    worker = BrowserProcess(BrowserConfig(browser_path=chromium_executable()), "task", "resource",
+                            network_policy=delayed_policy)
+    try:
+        opened = worker.call(command(BrowserAction.NAVIGATE, {"url": "about:blank"}))
+        assert BrowserToolOutput.read(opened.message["value"]).ok
+        code = "document.body.innerHTML=Array.from({length:100},(_,i)=>`<img src='http://127.0.0.1:9/${i}'>`).join(''); true"
+        evaluated = worker.call(command(BrowserAction.EVALUATE, {"code": code}))
+        assert BrowserToolOutput.read(evaluated.message["value"]).ok
+        assert started.wait(3)
+        worker.close()
+        assert worker._closed is not None and worker._closed["ok"] is True
+    finally:
+        worker.close()
 
 
 def test_worker_real_browser_wait_cancel_and_binary_capture() -> None:

@@ -10,7 +10,9 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from codey.research.search_contracts import SearchOutcome
 from codey.research.web_sources import WebSourceProvider
+from tests.support.search_fixture import search_outcome
 from tools import model_web_action_probe as probe
 
 NAME = "pubmed_rapamycin"
@@ -58,10 +60,10 @@ def main() -> None:
     cell = root / f"live-{NAME}-{args.protocol}"
     search_original, fetch_original = WebSourceProvider.search, WebSourceProvider.fetch
 
-    def search(self: WebSourceProvider, query: str, *, limit: int = 8) -> list[dict[str, object]]:
+    def search(self: WebSourceProvider, query: str, *, limit: int = 8) -> SearchOutcome:
         hits = search_original(self, query, limit=limit)
         probe.append(cell / "live-acquisitions.jsonl", {"kind": "search", "query": query, "hits": hits})
-        return hits
+        return search_outcome(query, hits, limit=limit)
 
     def fetch(self: WebSourceProvider, url: str) -> dict[str, object]:
         page = fetch_original(self, url)

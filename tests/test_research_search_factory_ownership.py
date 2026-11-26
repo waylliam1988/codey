@@ -36,7 +36,8 @@ def test_search_factory_module_exists_and_owns_default() -> None:
     assert FACTORY.exists(), "missing codey/research/search_factory.py"
     text = FACTORY.read_text(encoding="utf-8-sig")
     assert "def default_research_search_provider" in text
-    assert "ConnectorAwareSearchProvider" in text
+    assert "ScholarlySources" in text
+    assert "WebSourceProvider" in text
 
 
 def test_search_factory_is_operations_leaf() -> None:
@@ -59,16 +60,14 @@ def test_execution_and_flow_consume_factory_leaf() -> None:
     assert "codey.research.search_factory" not in flow_text
 
 
-def test_default_factory_builds_connector_aware_provider() -> None:
-    import contextlib
-
+def test_default_factory_builds_single_coordinator_with_scholarly_execution() -> None:
+    from codey.research.connector_search import ScholarlySources
     from codey.research.search_factory import default_research_search_provider
-
+    from codey.research.web_sources import WebSourceProvider
     provider = default_research_search_provider()
     try:
-        assert type(provider).__name__ == "ConnectorAwareSearchProvider"
+        assert isinstance(provider, WebSourceProvider)
+        assert isinstance(provider.scholarly, ScholarlySources)
+        assert provider._browser is None
     finally:
-        close = getattr(getattr(provider, "search", provider), "close", None)
-        if callable(close):
-            with contextlib.suppress(Exception):
-                close()
+        provider.close()

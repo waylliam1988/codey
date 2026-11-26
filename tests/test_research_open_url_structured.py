@@ -13,9 +13,10 @@ from codey.operations.kernel_facts import bind_source_identity, project_result_o
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.models import ToolCall
-from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 
 
 class _LongSearch:
@@ -23,8 +24,8 @@ class _LongSearch:
         self.text = text
         self.url = url
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, requested: str) -> dict[str, object]:
         return {"status": "ok",

@@ -16,7 +16,9 @@ from codey.research.extract import (
     _usable_fetch_page_text,
     extract_text,
     extract_title,
+    has_password_input,
     is_application_shell,
+    requires_authentication,
 )
 from codey.research.http_redirects import (
     build_no_redirect_opener,
@@ -127,6 +129,9 @@ def _download_text_fallback(url: str) -> dict[str, object]:
                 data = data[:_FETCH_HTTP_MAX_BYTES]
             html = data.decode(response_charset(headers), errors="replace")
             text = extract_text(html)
+            if requires_authentication(text, has_password_input(html)):
+                return _fetch_failure(final_url, "login_required: page requires authentication",
+                                      code="login_required", delivery="confirmed", http_status=status)
             shell = is_application_shell(html) and _fetch_page_failure_kind(text) != "page_unavailable"
             if shell or not _usable_fetch_page_text(text):
                 failure = _fetch_failure(

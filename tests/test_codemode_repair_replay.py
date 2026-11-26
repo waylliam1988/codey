@@ -12,9 +12,11 @@ from codey.operations.provider_request import prepare_provider_request
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_session import TaskSession
 from codey.providers.requests import SendTextRequest
+from codey.research.search_contracts import SearchOutcome
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from tests.support.search_fixture import search_outcome
 from tests.test_codemode_replay_authority import _durable
 
 
@@ -138,8 +140,8 @@ def test_return_only_repair_reuses_the_original_child_receipt(tmp_path: Path, mo
     class Source:
         calls = 0
 
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
@@ -182,8 +184,8 @@ def test_repair_token_is_bound_to_the_original_session(tmp_path: Path, monkeypat
     class Source:
         calls = 0
 
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
@@ -224,8 +226,8 @@ def test_fresh_codemode_execution_reads_the_new_source_version(tmp_path: Path, m
     class Source:
         calls = 0
 
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
@@ -260,8 +262,8 @@ def test_repair_argument_change_fails_without_fetching_again(tmp_path: Path, mon
     class Source:
         calls = 0
 
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
@@ -506,8 +508,8 @@ def test_repair_rejects_when_the_replayed_tool_is_revoked(tmp_path: Path, monkey
     class Source:
         calls = 0
 
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
@@ -547,8 +549,8 @@ def test_missing_or_absent_repair_authorization_never_reuses_a_child(
     class Source:
         calls = 0
 
-        def search(self, query: str, *, limit: int) -> list[JsonObject]:
-            return []
+        def search(self, query: str, *, limit: int) -> SearchOutcome:
+            return search_outcome(query, [], limit=limit)
 
         def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1

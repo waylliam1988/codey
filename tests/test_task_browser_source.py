@@ -1,18 +1,35 @@
-"""Search and source admission through the task-owned Chromium process."""
+"""Real browser regressions for the shared form/search observation pipeline."""
 from __future__ import annotations
 
-from urllib.parse import parse_qs, urlparse
+import time
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from codey.automation.browser_contracts import BrowserToolOutput, RouteDecision
-from codey.automation.browser_session import BrowserSession
-from codey.research import source_download
-from codey.research.browser_search import SearchUnavailableError
-from codey.research.source_acquisition import acquisition_observation
+from codey.automation.browser_contracts import RouteDecision
+from codey.research.search_contracts import SearchState
 from codey.research.task_browser_source import TaskBrowserSource
 from codey.runtime.core.tool_resources import tool_resources_for
+from tests.support.search_fixture import FORM, RESULT, SearchFixture
 from tests.support.task_browser import browser_for
+
+
+def test_result_shaped_links_outside_the_result_region_are_not_search_hits() -> None:
+    def route(reply: RouteDecision) -> None:
+        query = parse_qs(urlsplit(reply.request.url).query).get("q", [""])[0]
+        from html import escape
+
+        body = FORM.format(query=escape(query, quote=True))
+        if query:
+            body += "<ol id='b_results'></ol><aside>" + RESULT + "</aside>"
+        reply.fulfill(content_type="text/html", body=body)
+    browser = browser_for(route)
+    try:
+        outcome = TaskBrowserSource(browser, engine="bing").search("query", deadline=time.monotonic() + 5)
+        assert outcome.state == SearchState.FAILED
+        assert outcome.failure_kind == "search_page_blank"
+    finally:
+        browser.close()
 
 
 def test_source_only_authorization_borrows_the_task_worker_without_exposing_actions() -> None:
@@ -46,88 +63,76 @@ def test_source_only_authorization_borrows_the_task_worker_without_exposing_acti
         browser.close()
 
 
-@pytest.mark.parametrize("fallback", [False, True])
-def test_search_fallback_preserves_query_and_ignores_navigation(fallback: bool) -> None:
-    visited: list[str] = []
-
-    def route(reply: RouteDecision) -> None:
-        visited.append(reply.request.url)
-        body = ('<main>Access denied. Are you a robot?</main>' if fallback and 'bing.com' in reply.request.url else
-            '<nav><a href="https://example.com/navigation">Navigation</a></nav>'
-            '<main>Results for the requested official documentation query.'
-            '<a href="https://example.com/current">Current source document</a>'
-            '<a href="https://example.com/current">Duplicate</a>'
-            '<a href="https://www.bing.com/search?q=other">Next</a></main>')
-        reply.fulfill(content_type="text/html", body=body)
-
-    browser = browser_for(route)
+@pytest.mark.parametrize("mode,state,kind", [
+    ("hits", SearchState.HITS, ""),
+    ("empty", SearchState.EMPTY, ""),
+    ("shell", SearchState.FAILED, "search_page_blank"),
+    ("structure", SearchState.FAILED, "search_structure_changed"),
+    ("challenge", SearchState.FAILED, "search_challenge"),
+    ("http_error", SearchState.FAILED, "search_page_unavailable"),
+])
+def test_real_form_search_classifies_only_observed_result_facts(mode: str, state: SearchState, kind: str) -> None:
+    fixture = SearchFixture(mode)
+    browser = browser_for(fixture.route)
     try:
-        source = TaskBrowserSource(browser)
-        rows = source.search('frame identity site:example.com')
-        assert [row['url'] for row in rows] == ['https://example.com/current']
-        assert all(parse_qs(urlparse(url).query)['q'] == ['frame identity site:example.com'] for url in visited)
-        assert len(visited) == (2 if fallback else 1)
-        assert bool(source.last_search_errors) == fallback
-        binding = browser.resource_binding()
+        source = TaskBrowserSource(browser, engine="bing")
+        outcome = source.search("frame identity", deadline=time.monotonic() + 5)
+        assert outcome.state == state, outcome
+        assert outcome.failure_kind == kind
+        queries = [parse_qs(urlsplit(url).query) for url in fixture.requests if "/search?" in url]
+        assert queries == [{"q": ["frame identity"], "form": ["fixture"]}]
+        if outcome.hits:
+            assert outcome.hits[0].url == "https://example.com/current"
         source.close()
-        assert browser.snapshot().ok and browser.resource_binding() == binding
+        assert browser.snapshot().ok  # Borrowing source cannot close its owner's resource.
     finally:
         browser.close()
 
 
-def test_search_rejects_wrong_query_and_classifies_challenge_without_minting_results() -> None:
-    browser = browser_for(lambda route: route.fulfill(content_type="text/html",
-        body='<p>Access denied, are you a robot?</p><a href="https://example.com/not-a-result">Help</a>'))
+def test_delayed_result_after_old_2500ms_limit_and_warm_session_reuse() -> None:
+    fixture = SearchFixture(delay_ms=2800)
+    browser = browser_for(fixture.route)
     try:
-        source = TaskBrowserSource(browser, engine='bing')
-        with pytest.raises(SearchUnavailableError) as caught:
-            source.search('current query')
-        assert caught.value.failure_kind == 'search_page_unavailable'
-        assert source.last_search_failure['engine'] == 'bing'
+        source = TaskBrowserSource(browser, engine="bing")
+        first = source.search("first query", deadline=time.monotonic() + 10)
+        target = browser.resource_binding()
+        second = source.search("second query", deadline=time.monotonic() + 8)
+        assert first.state == second.state == SearchState.HITS
+        assert target == browser.resource_binding()
+        assert fixture.requests.count("https://www.bing.com/") == 1
+        assert second.attempts[0].requested_query == "second query"
+    finally:
+        browser.close()
+
+
+def test_site_filter_empty_preserves_candidates_instead_of_claiming_blank_page() -> None:
+    fixture = SearchFixture()
+    browser = browser_for(fixture.route)
+    try:
+        outcome = TaskBrowserSource(browser, engine="bing").search("identity site:other.example", deadline=time.monotonic() + 6)
+        assert outcome.state == SearchState.FILTERED_EMPTY
+        assert outcome.attempts[0].rejected_urls == ("https://example.com/current",)
+    finally:
+        browser.close()
+
+
+def test_binding_actions_keeps_the_existing_search_session_and_page_identity() -> None:
+    from codey.operations.browser.browser_resources import bind_source_browser, source_browser
+    from codey.research.tools import ResearchTools
+    from codey.research.web_sources import WebSourceProvider
+    fixture = SearchFixture()
+    browser = browser_for(fixture.route, owner_task_id="r")
+    renderer = TaskBrowserSource(browser, owns_browser=True)
+    web = WebSourceProvider(browser_factory=lambda: renderer)
+    try:
+        assert web.search("warm session").state == SearchState.HITS
+        binding = browser.resource_binding()
+        tools = ResearchTools(web, None, None)
+        assert source_browser(tools, owner_task_id="r") is browser
+        bind_source_browser(tools, browser)
+        assert web.browser_source is renderer
+        assert browser.resource_binding() == binding
+        web.close()
         assert browser.snapshot().ok
-    finally:
-        browser.close()
-
-
-def test_failed_navigation_translates_dispatch_into_the_source_delivery_contract() -> None:
-    browser = browser_for(lambda route: route.abort())
-    try:
-        page = TaskBrowserSource(browser).fetch('https://example.com/failed')
-        assert page['status'] == 'error'
-        trace = acquisition_observation(page['acquisition'])
-        attempts = trace['attempts']
-        assert isinstance(attempts, list) and len(attempts) == 1
-        attempt = attempts[0]
-        assert isinstance(attempt, dict) and attempt['delivery'] == 'unconfirmed'
-        assert browser.resource_binding() is not None
-    finally:
-        browser.close()
-
-
-def test_pdf_discovery_and_download_keep_both_original_acquisition_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
-    browser = BrowserSession()
-    url = 'https://example.com/source.pdf'
-
-    def navigate(target: str) -> BrowserToolOutput:
-        assert target == url
-        return BrowserToolOutput('Opened PDF', True, {})
-
-    def capture() -> dict[str, object]:
-        return {'status': 'ok', 'url': url, 'http_status': 200, 'content_type': 'application/pdf', 'text': 'PDF viewer'}
-
-    def download(target: str, *, mime_type: str) -> dict[str, object]:
-        assert target == url and mime_type == 'application/pdf'
-        return {'status': 'ok', 'url': url, 'content_kind': 'pdf', 'bytes': b'%PDF-fixture', 'title': 'Source'}
-
-    monkeypatch.setattr(browser, 'navigate', navigate)
-    monkeypatch.setattr(browser, 'capture', capture)
-    monkeypatch.setattr(source_download, '_download_pdf_streaming', download)
-    try:
-        page = TaskBrowserSource(browser).fetch(url)
-        trace = acquisition_observation(page['acquisition'])
-        attempts = trace['attempts']
-        assert isinstance(attempts, list)
-        assert [row['backend'] for row in attempts if isinstance(row, dict)] == ['browser', 'http']
-        assert page['bytes'] == b'%PDF-fixture' and page['content_kind'] == 'pdf'
     finally:
         browser.close()

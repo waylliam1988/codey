@@ -23,7 +23,7 @@ def test_current_production_keeps_browser_material_after_connector_hits() -> Non
     case = experiment.cases()[0]
     browser = experiment._FakeProvider(case.browser_hits)
     provider = experiment._ConnectorFixture(browser, case.connector_hits)
-    rows = experiment.production.ConnectorAwareSearchProvider.search(provider, "versioned limitation", limit=case.limit)
+    rows = experiment.production.WebSourceProvider.search(provider, "versioned limitation", limit=case.limit).rows
     assert browser.calls == 1
     assert any("official.example.org" in str(row.get("url")) for row in rows)
     assert len(rows) <= case.limit

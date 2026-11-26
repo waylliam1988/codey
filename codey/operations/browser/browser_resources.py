@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 
 from codey.automation.browser_contracts import BrowserConfig
 from codey.automation.browser_session import BrowserSession
-from codey.research.browser_search import BrowserSearchProvider
-from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.research.web_sources import WebSourceProvider
@@ -59,42 +57,30 @@ def resume_assistance_observation(browser: BrowserSession | None, continuation: 
 
 
 def bind_source_browser(tools: ResearchTools, browser: BrowserSession) -> None:
-    search = tools.search
-    base = search.base_provider if isinstance(search, ConnectorAwareSearchProvider) else search
-    source = TaskBrowserSource(browser)
+    base = tools.search
     if isinstance(base, WebSourceProvider):
         # Source acceptance and its ledger stay with the existing gateway.
         # Only the live browser connection is shared across attempts.
-        base.bind_browser_source(source)
-    elif isinstance(base, TaskBrowserSource):
-        base.browser = browser
-    elif isinstance(base, BrowserSearchProvider):
-        base.close()
-        if isinstance(search, ConnectorAwareSearchProvider):
-            search.base_provider = source
+        existing = base.bound_browser_source
+        if isinstance(existing, TaskBrowserSource):
+            existing.bind_browser(browser)
         else:
-            tools.search = source
+            base.bind_browser_source(TaskBrowserSource(browser, profiles=base.profiles))
+    elif isinstance(base, TaskBrowserSource):
+        base.bind_browser(browser)
     tools.browser_session = browser
 
 
 def source_browser(tools: ResearchTools, *, owner_task_id: str = "") -> BrowserSession:
     """Translate source configuration at the operations composition boundary."""
-    search = tools.search
-    base = search.base_provider if isinstance(search, ConnectorAwareSearchProvider) else search
-    if isinstance(base, TaskBrowserSource):
-        return base.browser
-    if isinstance(base, BrowserSearchProvider):
-        config = BrowserConfig(browser_path=base.browser_path or "", profile_dir=str(base.profile_dir) if not base.isolated else "",
-            cdp_port=base.cdp_port, headless=base.headless, launch=base.launch and not base.require_existing_session,
-            isolated=base.isolated and not base.require_existing_session)
-    elif isinstance(base, WebSourceProvider) and base.browser_session is not None:
-        settings = base.browser_session
-        config = BrowserConfig(profile_dir=str(settings.profile_dir) if settings.profile_dir is not None else "",
-            cdp_port=settings.cdp_port, headless=False, launch=not settings.require_existing,
-            isolated=not bool(settings.cdp_port))
-    else:
-        config = BrowserConfig(headless=False)
-    return BrowserSession(config, owner_task_id=owner_task_id)
+    source = tools.search
+    if isinstance(source, WebSourceProvider):
+        rendered = source.browser_source
+        if isinstance(rendered, TaskBrowserSource):
+            return rendered.browser
+    if isinstance(source, TaskBrowserSource):
+        return source.browser
+    return BrowserSession(BrowserConfig(headless=False), owner_task_id=owner_task_id)
 
 
 def build_task_browser(owner_task_id: str, resources: ToolResources, tools: ResearchTools | None = None,

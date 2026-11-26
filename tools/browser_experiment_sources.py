@@ -6,7 +6,7 @@ from pathlib import Path
 from codey.automation.browser_contracts import BrowserConfig, RouteDecision
 from codey.automation.browser_routes import route_policy
 from codey.automation.browser_session import BrowserSession
-from codey.policies.network import check_fetch_url
+from codey.policies.network import check_browser_url
 from codey.research.browser_page import validate_browser_capture
 from codey.research.source_acquisition import with_attempt
 from codey.research.source_gateway import OpenedSource, ResearchSourceGateway
@@ -20,11 +20,13 @@ class ResumableBrowserSearchProvider(TaskBrowserSource):
                  engine: str | None = None) -> None:
         super().__init__(BrowserSession(BrowserConfig(browser_path=browser_path or "",
             profile_dir=str(profile_dir) if profile_dir is not None else "", cdp_port=cdp_port,
-            headless=headless, isolated=isolated and not require_existing_session, launch=launch and not require_existing_session),
+            headless=headless, isolated=isolated and not require_existing_session, launch=launch and not require_existing_session,
+            bring_to_front=bring_to_front),
             network_policy=route_policy(lambda reply: self._guard_request(reply)), owner_task_id=owner_task_id), engine=engine)
 
     def _guard_request(self, route: RouteDecision) -> None:
-        route.abort() if check_fetch_url(route.request.url) else route.continue_()
+        reason = check_browser_url(route.request.url, route.request.resource_type, route.request.is_navigation_request())
+        route.abort(reason) if reason else route.continue_()
 
     def resume_fetch(self) -> dict[str, object]:
         try:

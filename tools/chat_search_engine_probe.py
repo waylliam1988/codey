@@ -10,9 +10,9 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.research.browser_search import BrowserSearchProvider, SearchUnavailableError
-from codey.research.web_sources import BrowserSource
-from codey.types.json_value import JsonObject
+from codey.research.browser_search import BrowserSearchProvider
+from codey.research.search_contracts import SearchState
+from codey.types.json_value import JsonObject, encode_transport_value
 
 QUERIES = ("福州美食 推荐 吃什么 福州小吃", "东百中心 福州 附近 景点 好玩 餐厅 商场",
            "成都太古里 附近 游玩 推荐", "杭州美食 本地小吃")
@@ -32,13 +32,15 @@ def main() -> int:
     for number, query in enumerate(QUERIES):
         engines = ("bing", "duckduckgo") if number % 2 == 0 else ("duckduckgo", "bing")
         for engine in engines:
-            provider: BrowserSource = BrowserSearchProvider(engine=engine, headless=False, isolated=False)
+            provider = BrowserSearchProvider(engine=engine, headless=False, isolated=False)
             started = time.monotonic()
             report: JsonObject = {"engine": engine, "query": query, "relevance_review_required": True}
             try:
-                results = provider.search(query, limit=8)
-                report.update({"results": [row for row in results], "acquisition_ok": bool(results)})
-            except (SearchUnavailableError, TimeoutError) as exc:
+                outcome = provider.search(query, limit=8)
+                report.update({"results": outcome.rows, "state": outcome.state.value,
+                               "attempts": encode_transport_value(outcome.attempts),
+                               "acquisition_ok": outcome.state != SearchState.FAILED})
+            except TimeoutError as exc:
                 report.update({"results": [], "acquisition_ok": False, "error": str(exc)})
             finally:
                 provider.close()

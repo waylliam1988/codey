@@ -7,15 +7,13 @@ The child keeps asyncio debug output intact; the parent fails on orphaned work.
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import os
 import subprocess
 import sys
-from functools import partial
 from pathlib import Path
 
-from codey.research.browser_search import BrowserSearchProvider, _search_browser_call
+from codey.research.browser_search import BrowserSearchProvider
 
 
 class Options(argparse.Namespace):
@@ -25,11 +23,9 @@ class Options(argparse.Namespace):
 
 
 def _burst(provider: BrowserSearchProvider) -> None:
-    page = provider._ensure_fetch_page_on_browser_thread("https://www.sqlite.org/wal.html")
-    # The production guard blocks these destinations. The burst makes no model
-    # requests and sends no requests to public sites or local application servers.
-    page.set_content("".join(f'<img src="http://127.0.0.1:9/probe-{n}">' for n in range(100)),
-                     wait_until="domcontentloaded")
+    provider.browser.navigate("about:blank")
+    html = "".join(f'<img src="http://127.0.0.1:9/probe-{n}">' for n in range(100))
+    provider.browser.evaluate("document.body.innerHTML=" + json.dumps(html))
 
 
 def main() -> None:
@@ -45,10 +41,9 @@ def main() -> None:
         for cycle in range(args.cycles):
             provider = BrowserSearchProvider(profile_dir=args.directory / "profile")
             try:
-                _search_browser_call(partial(_burst, provider))
+                _burst(provider)
             finally:
                 provider.close()
-                _search_browser_call(gc.collect)
                 print(f"cycle={cycle} closed", flush=True)
         return
     env = {**os.environ, "PYTHONASYNCIODEBUG": "1"}

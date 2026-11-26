@@ -5,11 +5,12 @@ import pytest
 
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import restore_ledger_observation
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.source_observation import source_observation
 from codey.research.source_reading import render_source_read
 from codey.research.tools import ResearchTools
-from codey.types.json_value import JsonObject
+from tests.support.search_fixture import search_outcome
 from tests.test_research import fake_pypdf
 
 URL = "https://example.com/field-record"
@@ -20,8 +21,8 @@ class StaticSource:
         self.kind = kind
         self.calls = 0
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
-        return []
+    def search(self, query: str, *, limit: int) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.calls += 1

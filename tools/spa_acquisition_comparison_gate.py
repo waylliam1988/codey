@@ -18,6 +18,9 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request
 
+from codey.research.search_contracts import SearchOutcome
+from tests.support.search_fixture import search_outcome
+
 SITE = "https://api.lihe.chat/"
 FOOD = "https://example.com/fuzhou-food-record"
 TASKS = {"site_spa": SITE + "  你帮我看看这个网站是干嘛的",
@@ -52,7 +55,7 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
     from codey.app.headless_runner import HeadlessRequest, run_headless
     from codey.env_names import NATIVE_TOOLS_ENV
     from codey.research.web_sources import WebSourceProvider
-    from codey.types.json_value import JsonObject, decode_json_object
+    from codey.types.json_value import decode_json_object
     from tools import local_model_gate_attempts as attempts
     from tools.shell_web_diagnostic_gate import select_target
     from tools.shell_web_food_gate import opened_bodies
@@ -102,9 +105,9 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
                 "limits": "One trial; source responses are controlled; answer accuracy requires review."}
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def search(self: WebSourceProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
-        return [{"title": "福州小吃记录" if case == "food" else "Site fixture",
-                 "url": FOOD if case == "food" else SITE, "snippet": "Open the page for its actual contents."}]
+    def search(self: WebSourceProvider, query: str, *, limit: int = 8) -> SearchOutcome:
+        return search_outcome(query, [{"title": "福州小吃记录" if case == "food" else "Site fixture",
+                 "url": FOOD if case == "food" else SITE, "snippet": "Open the page for its actual contents."}], limit=limit)
 
     def observe(row: dict[str, object]) -> None:
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:

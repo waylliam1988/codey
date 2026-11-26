@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.research.search_contracts import SearchOutcome
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import (
     FailOpenPromptTrace,
@@ -14,6 +15,7 @@ from codey.runtime.observe.prompt_envelope import (
     record_provider_send_prompt,
 )
 from codey.workspace.context_source import ContextSource, render_context_sources_with_metadata
+from tests.support.search_fixture import search_outcome
 
 
 class _Trace:
@@ -21,10 +23,10 @@ class _Trace:
         self.sections: list[dict[str, object]] = []
         self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
-    def record_prompt_section(self, name, text, **kwargs) -> None:
+    def record_prompt_section(self, name: str, text: str, **kwargs: object) -> None:
         self.sections.append({"name": name, "text": text, **kwargs})
 
-    def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+    def record_provider_prompt_boundary(self, section_args: object, surface_payload: object=None) -> None:
         payload = dict(section_args)
         # surface is validated metadata only; boundary tests ignore it here.
         del surface_payload
@@ -39,23 +41,23 @@ class _Trace:
             "purpose": payload.get("purpose"),
         })
 
-    def record_permission_profile(self, *args, **kwargs) -> None:
+    def record_permission_profile(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_permission_profile", args, kwargs))
 
 
 class _BrokenTrace:
-    def record_prompt_section(self, *_args, **_kwargs) -> None:
+    def record_prompt_section(self, *_args: object, **_kwargs: object) -> None:
         raise OSError("trace unavailable")
 
-    def record_provider_prompt_boundary(self, *_args, **_kwargs) -> None:
+    def record_provider_prompt_boundary(self, *_args: object, **_kwargs: object) -> None:
         raise OSError("trace unavailable")
 
 
 class _StoppingTrace:
-    def record_prompt_section(self, *_args, **_kwargs) -> None:
+    def record_prompt_section(self, *_args: object, **_kwargs: object) -> None:
         raise cancellation.TaskCancelled("stop")
 
-    def record_provider_prompt_boundary(self, *_args, **_kwargs) -> None:
+    def record_provider_prompt_boundary(self, *_args: object, **_kwargs: object) -> None:
         raise cancellation.TaskCancelled("stop")
 
 
@@ -74,9 +76,9 @@ class _Provider:
 
 
 class _Search:
-    def search(self, query: str, limit: int = 8) -> list[dict]:
-        del query, limit
-        return []
+    def search(self, query: str, limit: int = 8) -> SearchOutcome:
+        pass
+        return search_outcome(query, [], limit=limit)
 
     def fetch(self, url: str) -> dict:
         del url
@@ -180,7 +182,7 @@ class PromptEnvelopeTests(unittest.TestCase):
             class ControlTeachCancelled(cancellation.TaskCancelled):
                 pass
 
-            def record_prompt_section(self, *_args, **_kwargs) -> None:
+            def record_prompt_section(self, *_args: object, **_kwargs: object) -> None:
                 raise self.ControlTeachCancelled("stop")
 
         with self.assertRaises(_ControlTeachStoppingTrace.ControlTeachCancelled):
@@ -192,7 +194,7 @@ class PromptEnvelopeTests(unittest.TestCase):
             class ControlTeachCancelled(RuntimeError):
                 pass
 
-            def record_prompt_section(self, *_args, **_kwargs) -> None:
+            def record_prompt_section(self, *_args: object, **_kwargs: object) -> None:
                 raise self.ControlTeachCancelled("stop")
 
         FailOpenPromptTrace(_OldNameOnlyStoppingTrace()).record_section(
@@ -210,7 +212,7 @@ class PromptEnvelopeTests(unittest.TestCase):
             freshness = "provider_send"
 
             @property
-            def source_refs(self):  # pragma: no cover - exercised through exception path
+            def source_refs(self) -> tuple[str, ...]:  # pragma: no cover - exercised through exception path
                 raise OSError("trace unavailable")
 
         FailOpenPromptTrace(_Trace()).record_section(_BadSection())
@@ -226,7 +228,7 @@ class PromptEnvelopeTests(unittest.TestCase):
             freshness = "provider_send"
 
             @property
-            def source_refs(self):  # pragma: no cover - exercised through early return
+            def source_refs(self) -> tuple[str, ...]:  # pragma: no cover - exercised through early return
                 raise AssertionError("should not inspect sections without trace")
 
         FailOpenPromptTrace(None).record_section(_BadSection())
@@ -256,9 +258,9 @@ class PromptEnvelopeTests(unittest.TestCase):
         first: list[dict[str, object]] = []
         second: list[dict[str, object]] = []
 
-        def capture(store: list[dict[str, object]]):
+        def capture(store: list[dict[str, object]]) -> object:
             class _Sink:
-                def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+                def record_provider_prompt_boundary(self, section_args: object, surface_payload: object=None) -> None:
                     del surface_payload
                     store.append(dict(section_args))
 
@@ -412,7 +414,7 @@ class PromptEnvelopeTests(unittest.TestCase):
 
     def test_trace_call_failure_is_logged_but_stays_fail_open(self) -> None:
         class _ExplodingCall:
-            def record_permission_profile(self, *_args, **_kwargs) -> None:
+            def record_permission_profile(self, *_args: object, **_kwargs: object) -> None:
                 raise OSError("trace unavailable")
 
         with self.assertLogs("codey.runtime.observe.prompt_envelope", level="DEBUG") as logs:
@@ -426,8 +428,8 @@ class PromptEnvelopeTests(unittest.TestCase):
         from tests.support.kernel_runtime import run_agent as run
 
         class _ExplodingTrace:
-            def __getattr__(self, _name):
-                def _boom(*_args, **_kwargs):
+            def __getattr__(self, _name: str) -> object:
+                def _boom(*_args: object, **_kwargs: object) -> None:
                     raise OSError("trace unavailable")
 
                 return _boom
@@ -438,12 +440,12 @@ class PromptEnvelopeTests(unittest.TestCase):
             def new_chat(self) -> None:
                 return None
 
-            def send(self, prompt, timeout=None):
+            def send(self, prompt: str, timeout: float | None=None) -> str:
                 return '{"tool":"done","args":{"summary":"completed"}}'
 
         with tempfile.TemporaryDirectory() as td:
             request = AgentRequest(
-                provider=_Provider(),  # type: ignore[arg-type]
+                provider=_Provider(),
                 project=Path(td),
                 task="read-only planning",
                 provider_id="fake",

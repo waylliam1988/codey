@@ -1,4 +1,4 @@
-"""Ordinary chat searches the real browser and retains HTTP document acquisition."""
+"""Chat source discovery uses the same typed coordinator and lazy browser."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -6,7 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations.task_execution import build_research_tools
-from codey.research import browser_search, connector_search
+from codey.research.search_contracts import SearchOutcome, complete_search
+from codey.research.search_profiles import SearchProfile
+from codey.research.search_provenance import SearchAttempt
 from codey.research.source_acquisition import attempt, with_attempt
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
@@ -18,13 +20,14 @@ class Browser:
         self.searches: list[tuple[str, int]] = []
         self.fetches: list[str] = []
         self.closed = 0
-        self.last_search_errors: list[dict[str, str]] = []
-        self.hits: list[JsonObject] = [{"title": "福州小吃", "url": "https://example.com/food?a=1&b=2",
-                                       "snippet": "鱼丸、肉燕与锅边糊"}]
+        self.error: Exception | None = None
+        self.hits: list[JsonObject] = [{"title": "Food", "url": "https://example.com/food?a=1&b=2", "snippet": "Observed"}]
 
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
+    def search(self, query: str, *, limit: int, profile: SearchProfile, deadline: float) -> SearchOutcome:
         self.searches.append((query, limit))
-        return self.hits
+        if self.error is not None:
+            raise self.error
+        return complete_search(query, self.hits, SearchAttempt(query, profile.name), limit, explicit_empty=not self.hits)
 
     def fetch(self, url: str) -> dict[str, object]:
         self.fetches.append(url)
@@ -35,65 +38,45 @@ class Browser:
 
 
 @pytest.mark.parametrize("query", ["福州 美食 肉燕+鱼丸 & 地方小吃", "东百中心附近有什么好玩的", "东百中心有什么好玩的"])
-def test_default_search_uses_persistent_headed_browser_and_preserves_query(
-    monkeypatch: pytest.MonkeyPatch, query: str,
-) -> None:
+def test_lazy_search_preserves_original_query(query: str) -> None:
     browser = Browser()
-    configurations: list[tuple[bool, bool]] = []
-
-    def create(*, headless: bool, isolated: bool) -> Browser:
-        configurations.append((headless, isolated))
+    created: list[bool] = []
+    def create() -> Browser:
+        created.append(True)
         return browser
-
-    def forbidden(url: str, *, timeout: float) -> str:
-        pytest.fail("browser search must not request HTTP/RSS search")
-
-    monkeypatch.setattr(browser_search, "BrowserSearchProvider", create)
-    monkeypatch.setattr(connector_search, "_read_url_text", forbidden)
-    provider = WebSourceProvider()
-    assert configurations == []
-    assert provider.search(query, limit=3) == browser.hits
-    assert configurations == [(False, False)]
+    provider = WebSourceProvider(browser_factory=create)
+    assert not created
+    assert provider.search(query, limit=3).rows == browser.hits
     assert browser.searches == [(query, 3)]
     provider.close()
     assert browser.closed == 1
 
 
-@pytest.mark.parametrize("error", [ValueError("search challenge"), cancellation.TaskCancelled(), cancellation.DeadlineExceeded()])
-def test_search_failure_and_interruption_propagate_without_http_fallback(
-    monkeypatch: pytest.MonkeyPatch, error: Exception,
-) -> None:
+@pytest.mark.parametrize("error", [cancellation.TaskCancelled("stop"), cancellation.DeadlineExceeded("stop")])
+def test_search_interruption_propagates_without_next_engine(error: Exception) -> None:
     browser = Browser()
-
-    def fail(query: str, *, limit: int) -> list[JsonObject]:
-        raise error
-
-    monkeypatch.setattr(browser, "search", fail)
+    browser.error = error
     provider = WebSourceProvider(browser_factory=lambda: browser)
     with pytest.raises(type(error)):
-        provider.search("福州美食")
+        provider.search("query")
+    assert len(browser.searches) == 1
     provider.close()
-    assert browser.closed == 1
 
 
 def test_search_and_render_share_browser_but_static_reads_do_not_start_it(monkeypatch: pytest.MonkeyPatch) -> None:
     browser = Browser()
-    created: list[Browser] = []
-
-    def create() -> Browser:
-        created.append(browser)
-        return browser
-
-    provider = WebSourceProvider(browser_factory=create)
-    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda url: {"status": "ok", "text": "Static"})
+    provider = WebSourceProvider(browser_factory=lambda: browser)
+    def http(url: str) -> dict[str, object]:
+        return with_attempt({"status": "ok", "text": "Static"}, "http", url)
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", http)
     assert provider.fetch("https://example.com/static")["text"] == "Static"
-    assert created == []
+    assert provider._browser is None
     browser.hits = []
-    assert provider.search("empty search") == []
-    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda url: with_attempt({"status": "error", "failure_code": "page_not_loaded"}, "http", url))
+    assert provider.search("empty search").rows == []
+    def pending(url: str) -> dict[str, object]:
+        return with_attempt({"status": "error", "failure_code": "page_not_loaded"}, "http", url)
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", pending)
     assert provider.fetch("https://example.com/spa")["text"] == "Rendered page body"
-    assert created == [browser]
-    assert browser.fetches == ["https://example.com/spa"]
     provider.close()
     provider.close()
     assert browser.closed == 1
@@ -133,7 +116,7 @@ def test_explicit_factory_is_respected_for_both_chat_and_research(
 
 
 def test_http_fetch_preserves_failure_and_delegates_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
-    failure = {"status": "error", "url": "https://example.com/", "error": "page_blank"}
+    failure: dict[str, object] = {"status": "error", "url": "https://example.com/", "error": "page_blank"}
     monkeypatch.setattr("codey.research.source_download._download_text_fallback", lambda url: failure)
     result = WebSourceProvider().fetch("https://example.com/")
     assert {key: value for key, value in result.items() if key != "acquisition"} == failure

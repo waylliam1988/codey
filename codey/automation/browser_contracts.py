@@ -24,6 +24,8 @@ class BrowserAction(StrEnum):
     WAIT = "wait"
     NAVIGATE = "navigate"
     EVALUATE = "evaluate"
+    SUBMIT_FORM = "submit_form"
+    DIAGNOSTICS = "diagnostics"
     TAB_LIST = "tab_list"
     TAB_NEW = "tab_new"
     TAB_SWITCH = "tab_switch"
@@ -133,17 +135,19 @@ class BrowserConfig:
     headless: bool = True
     launch: bool = True
     isolated: bool = True
+    bring_to_front: bool = False
 
     def payload(self) -> JsonObject:
         return {"browser_path": self.browser_path, "profile_dir": self.profile_dir, "cdp_port": self.cdp_port,
-                "headless": self.headless, "launch": self.launch, "isolated": self.isolated}
+                "headless": self.headless, "launch": self.launch, "isolated": self.isolated,
+                "bring_to_front": self.bring_to_front}
 
     @classmethod
     def read(cls, raw: object) -> BrowserConfig:
         from codey.types.json_value import require_json_integer
 
         row = decode_json_object(raw)
-        if set(row) != {"browser_path", "profile_dir", "cdp_port", "headless", "launch", "isolated"}:
+        if set(row) != {"browser_path", "profile_dir", "cdp_port", "headless", "launch", "isolated", "bring_to_front"}:
             raise ValueError("invalid browser configuration")
         port = require_json_integer(row["cdp_port"], "cdp_port")
         if not 0 <= port < 65536:
@@ -151,12 +155,18 @@ class BrowserConfig:
         return cls(require_json_string(row["browser_path"], "browser_path"),
                    require_json_string(row["profile_dir"], "profile_dir"), port,
                    require_json_boolean(row["headless"], "headless"),
-                   require_json_boolean(row["launch"], "launch"), require_json_boolean(row["isolated"], "isolated"))
+                   require_json_boolean(row["launch"], "launch"), require_json_boolean(row["isolated"], "isolated"),
+                   require_json_boolean(row["bring_to_front"], "bring_to_front"))
 
 
 class RouteRequest(Protocol):
     @property
     def url(self) -> str: ...
+
+    @property
+    def resource_type(self) -> str: ...
+
+    def is_navigation_request(self) -> bool: ...
 
 
 class RouteDecision(Protocol):

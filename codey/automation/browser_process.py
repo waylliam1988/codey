@@ -20,7 +20,7 @@ from codey.automation.browser_contracts import (
     BrowserToolOutput,
 )
 from codey.automation.browser_ipc import BrowserPacket, read_packet, write_packet
-from codey.policies.network import check_fetch_url
+from codey.policies.network import check_browser_url
 from codey.runtime.core import cancellation
 from codey.types.json_value import (
     JsonObject,
@@ -124,12 +124,13 @@ class BrowserProcess:
         request = decode_json_object(packet.message["request"])
         try:
             if self.network_policy is None:
-                reason = check_fetch_url(require_json_string(request["url"], "url"))
-                decision: JsonObject = {"decision": "abort" if reason else "continue"}
+                reason = check_browser_url(require_json_string(request["url"], "url"),
+                    require_json_string(request["resource_type"], "resource type"), request["navigation"] is True)
+                decision: JsonObject = {"decision": "abort" if reason else "continue", "reason": reason or ""}
             else:
                 decision = self.network_policy(request)
-        except (OSError, RuntimeError, ValueError):
-            decision = {"decision": "abort"}
+        except (OSError, RuntimeError, ValueError) as exc:
+            decision = {"decision": "abort", "reason": "policy_error: " + type(exc).__name__}
         with contextlib.suppress(OSError, RuntimeError, ValueError):
             self._send(BrowserPacket({"type": "route_result", "route_id": packet.message["route_id"], "decision": decision}), expected=process)
 
@@ -164,6 +165,7 @@ class BrowserProcess:
                         pending.future.set_result(packet)
                 elif kind == "closed":
                     self._closed = message
+                    self._send(BrowserPacket({"type": "close_ack"}), expected=process)
                 elif kind != "health":
                     raise ValueError("invalid browser worker message")
         except (EOFError, OSError, RuntimeError, ValueError) as exc:

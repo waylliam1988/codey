@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from contextlib import AbstractContextManager
+from dataclasses import replace
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlencode
 
@@ -34,8 +35,9 @@ from codey.research.http_redirects import (
 from codey.research.http_redirects import (
     redirect_target as _redirect_target,
 )
-from codey.research.search_provenance import SearchAttempt, filter_site_results, provider_search_attempts
-from codey.research.source_acquisition import acquisition_observation, attempt, with_attempt
+from codey.research.search_contracts import SearchHit, SearchOutcome, SearchState, complete_search
+from codey.research.search_provenance import SearchAttempt
+from codey.research.source_acquisition import with_attempt
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
     MAX_CONNECTOR_HITS,
@@ -54,15 +56,13 @@ from codey.research.source_connectors import (
     scholarly_metadata_hit,
     source_result_from_hits,
 )
-from codey.research.source_gateway import _SearchProvider
-from codey.research.urls import canonical_key, full_key, host_key, parsed_url
+from codey.research.urls import canonical_key, host_key, parsed_url
 from codey.runtime.core import cancellation
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object
 from codey.utils.refs import clip, coerce_float
 
 CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv", "crossref", "openalex")
 CONNECTOR_RESULT_LIMIT = 2
-CONNECTOR_MIN_RESULTS = 2
 CONNECTOR_TIMEOUT_SECONDS = 4
 CONNECTOR_MIN_TIMEOUT_SECONDS = 0.2
 CONNECTOR_SEARCH_BUDGET_SECONDS = 6.0
@@ -75,12 +75,11 @@ _PUBMED_TOOL_NAME = "research_connector"
 _CONNECTOR_USER_AGENT = "Research Connector"
 
 
-class ConnectorAwareSearchProvider:
-    """Wrap a browser provider with PubMed/arXiv connector search/fetch."""
+class ScholarlySources:
+    """Scholarly search and recorded-hit fetch; backend selection belongs to WebSourceProvider."""
 
     def __init__(
         self,
-        base_provider: _SearchProvider,
         *,
         registry: SourceConnectorRegistry | None = None,
         connector_ids: tuple[str, ...] = CONNECTOR_SEARCH_IDS,
@@ -89,7 +88,6 @@ class ConnectorAwareSearchProvider:
         connector_budget_seconds: float = CONNECTOR_SEARCH_BUDGET_SECONDS,
         rate_limit: bool = True,
     ) -> None:
-        self.base_provider = base_provider
         self.registry = registry or built_in_connector_registry()
         self.connector_ids = tuple(
             item for item in connector_ids if self._connector_available(item, capability="search_supported")
@@ -102,129 +100,63 @@ class ConnectorAwareSearchProvider:
         self.timeout = _bounded_timeout(timeout)
         self.connector_budget_seconds = max(0.0, float(connector_budget_seconds or 0.0))
         self.rate_limit = rate_limit
-        self.name = "connector_aware/" + str(getattr(base_provider, "name", "browser"))
+        self.name = "scholarly"
         self._hits_by_url: dict[str, SourceHit] = {}
         self._last_request_at: dict[str, float] = {}
         self._search_deadline: float | None = None
-        self.last_connector_errors: list[dict[str, str]] = []
-        self.last_search_failures: list[dict[str, str]] = []
-        self.last_search_failure: dict[str, str] = {}
-        self.search_attempts: tuple[SearchAttempt, ...] = ()
 
-    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
-        self.search_attempts = ()
-        query = " ".join((query or "").split())
-        if not query:
-            return []
-        result_limit = _bounded_limit(limit, default=8, upper=MAX_CONNECTOR_HITS)
-        self.last_search_failures = []
-        self.last_search_failure = {}
-        safe_query = safe_connector_query(query, limit=12)
-        connector_results = self._connector_search_results(
-            query,
-            limit=min(self.connector_limit, result_limit),
-            safe_query=safe_query,
-        )
+    def search(self, query: str, *, limit: int, deadline: float) -> SearchOutcome | None:
+        safe = safe_connector_query(query, limit=12)
+        preferred = _preferred_connectors(safe, self.connector_ids)
+        if not preferred:
+            return None
+        self._search_deadline = min(deadline, time.monotonic() + self.connector_budget_seconds)
+        attempts: tuple[SearchAttempt, ...] = ()
+        hits: list[SearchHit] = []
+        seen: set[str] = set()
         try:
-            base_results = self._base_search(query, limit=result_limit)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            if not connector_results:
-                raise
-            base_results = list[JsonObject]()  # Real connector hits survive a browser failure.
+            for connector in preferred:
+                cancellation.check()
+                if self._connector_budget_exhausted() or len(hits) >= limit:
+                    break
+                result = self._search_connector(connector, safe, min(limit - len(hits), self.connector_limit))
+                rows = [_result_from_hit(hit) for hit in result.hits if hit.canonical_url]
+                attempt = SearchAttempt(query, connector, coverage="scholarly",
+                    effective_query=_connector_query(safe.terms, connector))
+                if result.errors and not rows:
+                    attempt = replace(attempt, failure_kind="connector_failed", detail="; ".join(result.errors), state="failed")
+                    attempts += (attempt,)
+                    continue
+                observed = complete_search(query, rows, attempt, limit - len(hits), explicit_empty=not rows)
+                attempts += observed.attempts
+                for hit in observed.hits:
+                    if hit.url not in seen:
+                        seen.add(hit.url)
+                        hits.append(hit)
+                if self._connector_available(connector, capability="fetch_supported"):
+                    for source_hit in result.hits:
+                        if source_hit.canonical_url:
+                            self._hits_by_url[canonical_key(source_hit.canonical_url)] = source_hit
+            # A scholarly zero result never completes the general web query.
+            return (SearchOutcome(SearchState.HITS, tuple(hits), attempts) if hits else
+                    SearchOutcome(SearchState.FAILED, attempts=attempts, failure_kind="search_no_scholarly_hits"))
         finally:
-            self.search_attempts += provider_search_attempts(self.base_provider)
-        return _merge_results(connector_results, base_results, limit=result_limit)
+            self._search_deadline = None
 
-    def fetch(self, url: str) -> dict[str, object]:
-        target = (url or "").strip()
-        attempts: list[JsonValue] = []
+    def fetch(self, url: str) -> dict[str, object] | None:
+        target = url.strip()
         hit = self._hits_by_url.get(canonical_key(target))
-        if hit is None:
-            try:
-                hit = self._fetchable_hit_for_url(target)
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                raise
-            except Exception as exc:
-                self._record_error(_connector_id_for_url(target), "fetch_lookup", exc)
-                hit = None
-        if hit is not None:
-            try:
-                return with_attempt(_page_from_fetched(fetch_recorded_hit(hit)), "connector", target)
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                raise
-            except Exception as exc:
-                self._record_error(hit.connector_id, "fetch", exc)
-                attempts.append(attempt("connector", target, {"status": "error", "detail": str(exc),
-                    "failure_code": "request_failed", "delivery": "unconfirmed"}))
-        page = with_attempt(self.base_provider.fetch(target), "browser", target)
-        trace = acquisition_observation(page["acquisition"])
-        entries = trace["attempts"]
-        assert isinstance(entries, list)
-        return {**page, "acquisition": {"version": 1, "attempts": attempts + entries}}
-
-    def close(self) -> None:
-        close = getattr(self.base_provider, "close", None)
-        if callable(close):
-            close()
-
-    def _base_search(self, query: str, *, limit: int) -> list[JsonObject]:
         try:
-            return list(self.base_provider.search(query, limit=limit))
+            if hit is None:
+                hit = self._fetchable_hit_for_url(target)
+            if hit is not None:
+                return with_attempt(_page_from_fetched(fetch_recorded_hit(hit)), "connector", target)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
-        except Exception as exc:
-            failures = getattr(self.base_provider, "last_search_errors", ())
-            if isinstance(failures, (list, tuple)):
-                for item in failures[-8:]:
-                    if isinstance(item, dict):
-                        failure = {str(key): str(value)[:160] for key, value in item.items()}
-                        self.last_search_failures.append(failure)
-                        self.last_search_failure = failure
-            self._record_error("browser", "search", exc)
-            raise
-
-    def _connector_search_results(
-        self,
-        query: str,
-        *,
-        limit: int,
-        safe_query: SafeConnectorQuery | None = None,
-    ) -> list[JsonObject]:
-        results: list[JsonObject] = []
-        safe_query = safe_query or safe_connector_query(query, limit=12)
-        if not safe_query.terms:
-            self._record_skip("connector", "search", safe_query.skip_reason or "connector_query_empty")
-            return results
-        previous_deadline = self._search_deadline
-        self._search_deadline = (
-            time.monotonic() + self.connector_budget_seconds if self.connector_budget_seconds > 0 else None
-        )
-        try:
-            for connector_id in _preferred_connectors(safe_query, self.connector_ids):
-                if self._connector_budget_exhausted():
-                    break
-                remaining = limit - len(results)
-                if remaining <= 0:
-                    break
-                connector_result = self._search_connector(connector_id, safe_query, remaining)
-                connector_rows = [_result_from_hit(hit) for hit in connector_result.hits if hit.canonical_url]
-                connector_rows, rejected = filter_site_results(query, connector_rows)
-                self.search_attempts += (SearchAttempt(query, connector_id,
-                    extraction_scope="connector_metadata", accepted_urls=tuple(str(row["url"]) for row in connector_rows),
-                    rejected_urls=rejected, failure_kind="; ".join(connector_result.errors)),)
-                for hit in connector_result.hits:
-                    if hit.canonical_url and self._connector_available(connector_id, capability="fetch_supported"):
-                        self._hits_by_url[canonical_key(hit.canonical_url)] = hit
-                    row = next((row for row in connector_rows if row["url"] == hit.canonical_url), None)
-                    if row is not None:
-                        results.append(row)
-                    if len(results) >= limit:
-                        break
-            return results
-        finally:
-            self._search_deadline = previous_deadline
+        except (OSError, RuntimeError, ValueError) as exc:
+            return with_attempt({"status": "error", "failure_code": "request_failed", "detail": str(exc),
+                                 "delivery": "unconfirmed"}, "connector", target)
+        return None
 
     def _search_connector(
         self,
@@ -244,7 +176,6 @@ class ConnectorAwareSearchProvider:
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
-            self._record_error(connector_id, "search", exc)
             return SourceConnectorResult(connector_id=connector_id, errors=(type(exc).__name__,))
         return SourceConnectorResult(connector_id=connector_id)
 
@@ -391,26 +322,6 @@ class ConnectorAwareSearchProvider:
             cancellation.wait(remaining)
         self._last_request_at[connector_id] = time.monotonic()
 
-    def _record_error(self, connector_id: str, action: str, exc: object) -> None:
-        self.last_connector_errors.append(
-            {
-                "connector_id": _connector_id(connector_id),
-                "action": _connector_id(action),
-                "error": clip(type(exc).__name__ or str(exc), 80),
-            }
-        )
-        del self.last_connector_errors[:-8]
-
-    def _record_skip(self, connector_id: str, action: str, reason: str) -> None:
-        self.last_connector_errors.append(
-            {
-                "connector_id": _connector_id(connector_id),
-                "action": _connector_id(action),
-                "error": _connector_id(reason),
-            }
-        )
-        del self.last_connector_errors[:-8]
-
     def _connector_available(self, connector_id: object, *, capability: str) -> bool:
         connector = _connector_id(connector_id)
         if connector not in CONNECTOR_SEARCH_IDS:
@@ -490,51 +401,7 @@ def _page_from_fetched(fetched: FetchedSource) -> dict[str, object]:
     }
 
 
-def _merge_results(connector_results: list[JsonObject], base_results: list[JsonObject], *, limit: int) -> list[JsonObject]:
-    merged: list[JsonObject] = []
-    seen_connector: set[str] = set()
-    seen_base: set[str] = set()
-    for row in connector_results:
-        url = str(row.get("url") or "").strip()
-        if not url:
-            continue
-        key = canonical_key(url)
-        if key in seen_connector:
-            continue
-        seen_connector.add(key)
-        merged.append(
-            {
-                "title": str(row.get("title") or "").strip(),
-                "url": url,
-                "snippet": str(row.get("snippet") or "").strip(),
-            }
-        )
-        if len(merged) >= limit:
-            return merged
-    for row in base_results:
-        url = str(row.get("url") or "").strip()
-        if not url:
-            continue
-        if canonical_key(url) in seen_connector:
-            continue
-        key = full_key(url)
-        if key in seen_base:
-            continue
-        seen_base.add(key)
-        merged.append(
-            {
-                "title": str(row.get("title") or "").strip(),
-                "url": url,
-                "snippet": str(row.get("snippet") or "").strip(),
-            }
-        )
-        if len(merged) >= limit:
-            break
-    return merged
-
-
 _CONNECTOR_MAX_REDIRECTS = 5
-
 _CONNECTOR_OPENER: urllib.request.OpenerDirector = build_no_redirect_opener()
 
 
@@ -635,14 +502,6 @@ def _arxiv_id_from_url(url: str) -> str:
     return arxiv_id if is_valid_arxiv_id(arxiv_id) else ""
 
 
-def _connector_id_for_url(url: str) -> str:
-    if _is_pubmed_url(url):
-        return "pubmed"
-    if _is_arxiv_url(url):
-        return "arxiv"
-    return "connector"
-
-
 def _bounded_timeout(value: object) -> float:
     if isinstance(value, bool):
         return float(CONNECTOR_TIMEOUT_SECONDS)
@@ -656,8 +515,7 @@ def _bounded_timeout(value: object) -> float:
 
 
 __all__ = [
-    "CONNECTOR_MIN_RESULTS",
     "CONNECTOR_RESULT_LIMIT",
     "CONNECTOR_SEARCH_IDS",
-    "ConnectorAwareSearchProvider",
+    "ScholarlySources",
 ]

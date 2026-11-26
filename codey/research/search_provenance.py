@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 from typing import Protocol, runtime_checkable
 from urllib.parse import parse_qs, urlsplit
 
-from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer, require_json_string
 
 _SITE = re.compile(r'(?<!\S)site:([^\s"\'()]+)', re.IGNORECASE)
 EXCLUDED_SEARCH_REGIONS = (
@@ -30,6 +30,12 @@ class SearchAttempt:
     accepted_urls: tuple[str, ...] = ()
     rejected_urls: tuple[str, ...] = ()
     failure_kind: str = ""
+    version: int = 2
+    state: str = "unknown"
+    effective_query: str = ""
+    coverage: str = "web"
+    detail: str = ""
+    diagnostics: tuple[JsonObject, ...] = ()
 
 
 @runtime_checkable
@@ -80,8 +86,23 @@ def query_consistency(final_url: str, query: str) -> bool | None:
 
 def decode_search_attempt(value: object) -> SearchAttempt:
     row = decode_json_object(value)
+    if "version" not in row:
+        legacy = {item.name for item in fields(SearchAttempt)} - {
+            "version", "state", "effective_query", "coverage", "detail", "diagnostics"}
+        if set(row) != legacy:
+            raise ValueError("invalid legacy search provenance")
+        row = {**row, "version": 2, "state": "unknown", "effective_query": "", "coverage": "web",
+               "detail": "", "diagnostics": list[JsonValue]()}
     if set(row) != {item.name for item in fields(SearchAttempt)}:
         raise ValueError("invalid search provenance")
+    if require_json_integer(row["version"], "search version") != 2:
+        raise ValueError("unsupported search provenance version")
+    state = require_json_string(row["state"], "search state")
+    if state not in {"unknown", "hits", "empty", "filtered_empty", "failed"}:
+        raise ValueError("invalid search state")
+    diagnostics = row["diagnostics"]
+    if not isinstance(diagnostics, list):
+        raise ValueError("invalid search diagnostics")
     consistent = row["query_consistent"]
     if consistent is not None and not isinstance(consistent, bool):
         raise ValueError("invalid query consistency")
@@ -96,4 +117,7 @@ def decode_search_attempt(value: object) -> SearchAttempt:
         final_url=require_json_string(row["final_url"], "final_url"),
         extraction_scope=require_json_string(row["extraction_scope"], "extraction_scope"),
         query_consistent=consistent, accepted_urls=urls("accepted_urls"), rejected_urls=urls("rejected_urls"),
-        failure_kind=require_json_string(row["failure_kind"], "failure_kind"))
+        failure_kind=require_json_string(row["failure_kind"], "failure_kind"), state=state,
+        effective_query=require_json_string(row["effective_query"], "effective query"),
+        coverage=require_json_string(row["coverage"], "coverage"), detail=require_json_string(row["detail"], "detail"),
+        diagnostics=tuple(decode_json_object(item) for item in diagnostics))

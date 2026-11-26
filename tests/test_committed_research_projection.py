@@ -1,4 +1,8 @@
 """Real receipt commits own live and restart facts, including failure windows."""
+
+from __future__ import annotations
+
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,12 +12,14 @@ from codey.operations.recovery import record_entry_policy
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
+from codey.research.search_contracts import SearchOutcome
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.models import ToolCall
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from tests.support.provider_actions import ProviderActions
 from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.search_fixture import search_outcome
 from tests.support.session_projection import restore_task_session
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
 
@@ -22,19 +28,19 @@ FINAL = "https://example.com/final"
 
 
 class Backend:
-    def __init__(self):
+    def __init__(self) -> None:
         self.calls = []
 
-    def search(self, query, limit=8):
+    def search(self, query: str, limit: int=8) -> SearchOutcome:
         self.calls.append(("search", query))
-        return [{"url": URL, "title": "Observed source", "snippet": "Preview"}]
+        return search_outcome(query, [{"url": URL, "title": "Observed source", "snippet": "Preview"}], limit=limit)
 
-    def fetch(self, url):
+    def fetch(self, url: str) -> dict[str, object]:
         self.calls.append(("fetch", url))
         return {"status": "ok", "url": FINAL, "title": "Observed source", "text": "exact body\n" * 1000}
 
 
-def runtime(tmp_path, monkeypatch):
+def runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
     project, state, logdir = _dirs(tmp_path)
     mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     policy = TaskPolicy(frozenset({"control", "web.read"}))
@@ -48,12 +54,12 @@ def runtime(tmp_path, monkeypatch):
 @pytest.mark.parametrize("name,args", [("web_search", {"query": "observed"}), ("open_url", {"url": URL})])
 @pytest.mark.parametrize("after_commit", [False, True])
 def test_commit_failure_never_publishes_and_committed_interruption_recovers(
-    tmp_path, monkeypatch, name, args, after_commit,
-):
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, args: dict[str, object], after_commit: bool,
+) -> None:
     session, tools, managed, deps, sink = runtime(tmp_path, monkeypatch)
     original_settle = sink.settle
 
-    def interrupted(*args, **kwargs):
+    def interrupted(*args: object, **kwargs: object) -> None:
         # At the actual commit boundary neither the session nor the formal
         # acquisition ledger may already contain the result being committed.
         assert not session.opened_sources and not session.searches and not session.executed
@@ -92,7 +98,7 @@ def test_commit_failure_never_publishes_and_committed_interruption_recovers(
         assert tools.search.calls == calls
 
 
-def test_live_and_recovery_share_projection_without_duplicate_searches(tmp_path, monkeypatch):
+def test_live_and_recovery_share_projection_without_duplicate_searches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     session, tools, managed, deps, sink = runtime(tmp_path, monkeypatch)
     for turn in (1, 2):
         results = execute_turn(session, [ToolCall("web_search", {"query": f"observed-{turn}"})],
@@ -135,7 +141,7 @@ def test_failed_acquisition_cannot_leave_source_evidence_in_formal_ledger() -> N
     assert not tools.ledger.evidence_items
 
 
-def test_knowledge_acquisition_view_uses_restored_ledger_not_stale_caches():
+def test_knowledge_acquisition_view_uses_restored_ledger_not_stale_caches() -> None:
     from codey.operations.task_execution import ExecutionDelegate
 
     tools = ResearchTools(search=Backend(), store=None, changes=None)

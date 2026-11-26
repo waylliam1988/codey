@@ -5,11 +5,13 @@ import tempfile
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.run_result import ResearchRunResult
+from codey.research.search_contracts import SearchOutcome
 from codey.research.topic_continuity import project_topic_continuity
 from codey.workspace.context_epoch import context_epoch_id
+from tests.support.search_fixture import search_outcome
 
 
-def _continuity_allow_policy():
+def _continuity_allow_policy() -> object:
     from codey.policies.task_policy import TaskPolicy
 
     return TaskPolicy(grants=frozenset({
@@ -23,14 +25,14 @@ class _SectionRecorder:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple, dict]] = []
 
-    def record_prompt_section(self, name, text, **kwargs) -> None:
+    def record_prompt_section(self, name: str, text: str, **kwargs: object) -> None:
         self.calls.append(("record_prompt_section", (name, text), kwargs))
 
-    def record_research_topic_continuity(self, payload, **kwargs) -> None:
+    def record_research_topic_continuity(self, payload: dict[str, object], **kwargs: object) -> None:
         self.calls.append(("record_research_topic_continuity", (payload,), kwargs))
 
-    def __getattr__(self, _name):
-        def _call(*args, **kwargs) -> None:
+    def __getattr__(self, _name: str) -> object:
+        def _call(*args: object, **kwargs: object) -> None:
             self.calls.append((_name, args, kwargs))
         return _call
 
@@ -68,8 +70,8 @@ class _SectionRecorder:
 
 
 class _NullSearch:
-    def search(self, *_args, **_kwargs) -> list[dict]:
-        return []
+    def search(self, query: str, *, limit: int = 8) -> SearchOutcome:
+        return search_outcome(query, [], limit=limit)
 
 
 class _FakeProvider:
@@ -78,10 +80,10 @@ class _FakeProvider:
     def __init__(self) -> None:
         self.prompts: list[str] = []
 
-    def new_chat(self, timeout=None) -> None:
+    def new_chat(self, timeout: float | None=None) -> None:
         del timeout
 
-    def send(self, text: str, timeout=None) -> str:
+    def send(self, text: str, timeout: float | None=None) -> str:
         del timeout
         self.prompts.append(text)
         return "{}"
@@ -122,7 +124,7 @@ def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
         "digest": "sha256:" + "0" * 64,
     }
 
-    def run_iteration(**kwargs):
+    def run_iteration(**kwargs: object) -> object:
         received.update(kwargs)
         return ResearchIterationRun(result=_stub_result())
 
@@ -154,7 +156,7 @@ def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
 def test_pipeline_skips_trace_row_when_nothing_admitted() -> None:
     trace = _SectionRecorder()
 
-    def run_iteration(**_kwargs):
+    def run_iteration(**_kwargs: object) -> object:
         return ResearchIterationRun(result=_stub_result())
 
     context = ResearchContext(

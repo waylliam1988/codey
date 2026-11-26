@@ -15,10 +15,12 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NoReturn
 from unittest import mock
 
 from codey.app import api as app_api
 from codey.app import shell_service
+from codey.automation.browser_worker import BrowserWorker
 from codey.runtime.core import cancellation
 
 
@@ -103,13 +105,14 @@ class PostBodyCoercionTests(unittest.TestCase):
             release_project_writer=mock.Mock(),
         )
         seen: dict[str, object] = {}
+        def restore(project: str, tracker: object, paths: list[str] | None, *,
+                    preview: bool) -> tuple[int, dict[str, object]]:
+            seen["project"] = project
+            return 200, {"ok": True}
         with mock.patch.object(
             app_api,
             "restore_snapshot_changes",
-            side_effect=lambda project, tracker, paths: (
-                seen.setdefault("project", project),
-                (200, {"ok": True}),
-            )[1],
+            side_effect=restore,
         ):
             status, _payload = app_api.restore_changes_response(ctx, {"project": 123})
         self.assertEqual(status, 200)
@@ -146,7 +149,9 @@ class PostBodyCoercionTests(unittest.TestCase):
         auth = OperatorAuth(8080)
         cookie = auth.exchange(auth.issue_bootstrap())
         assert cookie is not None
-        handler.server = SimpleNamespace(operator_auth=auth)
+        server = server_module.CodeyHTTPServer.__new__(server_module.CodeyHTTPServer)
+        server.operator_auth = auth
+        handler.server = server
         handler.headers = {"Cookie": cookie.split(";", 1)[0]}
         broken = SimpleNamespace()
         with mock.patch.object(server_module.CodeyHTTPServer, "app_context", broken):
@@ -181,7 +186,7 @@ class KnowledgeWalTests(unittest.TestCase):
 
 
 class BrowserWorkerBackpressureTests(unittest.TestCase):
-    def _track_worker(self, worker) -> object:
+    def _track_worker(self, worker: BrowserWorker) -> BrowserWorker:
         def _close_and_assert() -> None:
             self.assertTrue(worker.close())
             self.assertFalse(worker._thread.is_alive())
@@ -464,13 +469,13 @@ class CheckpointCorruptionTests(unittest.TestCase):
         from codey.runs.work_checkpoint import WorkCheckpointLoadResult
 
         class _CorruptThenUnwritable:
-            def load_result(self, _session_id):
+            def load_result(self, _session_id: str) -> WorkCheckpointLoadResult:
                 return WorkCheckpointLoadResult(
                     checkpoint=None,
                     corrupt_backup_path=Path("/tmp/state/abc.corrupt"),
                 )
 
-            def start(self, **_kwargs):
+            def start(self, **_kwargs: object) -> NoReturn:
                 raise OSError("cannot write")
 
         with tempfile.TemporaryDirectory() as td:
@@ -493,7 +498,7 @@ class WorkerBusyMappingTests(unittest.TestCase):
     def test_run_submit_maps_busy_to_503(self) -> None:
         from codey.automation.browser_worker import BrowserWorkerBusy
 
-        def _busy(*_args, **_kwargs):
+        def _busy(*_args: object, **_kwargs: object) -> NoReturn:
             raise BrowserWorkerBusy("browser worker busy: queue full")
 
         status, payload = app_api.run_submit_response(
@@ -510,7 +515,7 @@ class WorkerBusyMappingTests(unittest.TestCase):
         self.assertTrue(payload.get("hint"))
 
     def test_run_submit_keeps_500_for_server_faults(self) -> None:
-        def _broken(*_args, **_kwargs):
+        def _broken(*_args: object, **_kwargs: object) -> NoReturn:
             raise RuntimeError("disk exploded")
 
         status, payload = app_api.run_submit_response(
@@ -543,51 +548,6 @@ class WorkerBusyMappingTests(unittest.TestCase):
                 self.assertEqual(str(checkpoint.status), "pending")
             finally:
                 state.close()
-
-
-class BrowserFetchAbandonTests(unittest.TestCase):
-    def test_abandoned_fetch_closes_page_via_production_wrapper(self) -> None:
-        from codey.automation.browser_worker import BrowserWorker
-        from codey.research import browser_search as browser_search_module
-        from codey.research.browser_search import BrowserSearchProvider
-
-        provider = BrowserSearchProvider()
-        worker = BrowserWorker(name="test-fetch-abandon")
-
-        def _close_and_assert() -> None:
-            self.assertTrue(worker.close())
-            self.assertFalse(worker._thread.is_alive())
-        self.addCleanup(_close_and_assert)
-        fake_page = mock.Mock()
-        release = threading.Event()
-
-        def _slow_fetch(url):
-            provider._fetch_page = fake_page
-            provider._owned_pages[id(fake_page)] = fake_page
-            self.assertTrue(release.wait(10))
-            return {"status": "ok", "url": url, "title": "", "text": "late", "truncated": False}
-
-        with (
-            mock.patch.object(
-                provider, "_fetch_on_browser_thread", side_effect=_slow_fetch
-            ),
-            mock.patch.object(
-                browser_search_module,
-                "_search_browser_worker",
-                return_value=worker,
-            ),
-            mock.patch.object(
-                browser_search_module, "_FETCH_TOTAL_TIMEOUT_SECONDS", 0.2
-            ),
-        ):
-            result = provider.fetch("https://example.com/report")
-        self.assertIn("ERROR", str(result.get("text")))
-        release.set()
-        for _ in range(100):
-            if fake_page.close.called:
-                break
-            threading.Event().wait(0.05)
-        fake_page.close.assert_called()
 
 
 class CodecPromptSingleSourceTests(unittest.TestCase):
