@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codey UI/UX 改进提案 · 2026-11</title>
+<style>
+/* ================= tokens（沿用 tokens.css，新增项见 §5） ================= */
+:root{
+  --bg:#181818; --bg-2:#1c1c1c; --panel:#202020; --panel-2:#262626;
+  --hover:#2a2a2a; --active:#2f2f2f; --border:#2a2a2a; --border-2:#232323;
+  --text:#e6e6e6; --text-dim:#a0a0a0; --muted:#6b6b6b; --faint:#4a4a4a;
+  --green-rgb:120,165,139; --green:rgb(var(--green-rgb)); --green-bright:#acd1b9;
+  --ok-dot:var(--green); --ok-dot-ring:rgba(var(--green-rgb),.14);
+  --selection-bg:#3b5547; --err-text:#d28a8a;
+  --diff-add-bg:rgba(var(--green-rgb),.20); --diff-add-mark:var(--green-bright); --diff-add-edge:var(--green);
+  --diff-del-bg:rgba(210,138,138,.17); --diff-del-mark:#e4aaaa; --diff-del-edge:#bb8282;
+  /* 新增 */
+  --primary-bg:#e6e6e6; --primary-fg:#161616; --primary-hover:#ffffff;
+  --attention:#e6e6e6; --tooltip-bg:#2b2b2b;
+  --radius-sm:6px; --radius-md:10px; --radius-lg:14px;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Inter','PingFang SC','Microsoft YaHei',sans-serif;
+  --font-mono:'Cascadia Code','SF Mono','JetBrains Mono',Consolas,monospace;
+}
+*{box-sizing:border-box}
+::selection{background:var(--selection-bg);color:var(--text)}
+html,body{margin:0}
+body{background:#121212;color:var(--text);font:14px/1.7 var(--font-sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button{font-family:inherit}
+:focus-visible{outline:1px solid var(--text-dim);outline-offset:2px}
+textarea:focus-visible,input:focus-visible{outline:none}
+
+/* ================= 文档外壳（d- 前缀，只用于说明页） ================= */
+.d-doc{max-width:1640px;margin:0 auto;padding:48px 32px 140px}
+.d-doc h1{font-size:28px;font-weight:500;margin:0 0 6px;letter-spacing:-.3px}
+.d-doc h2{font-size:20px;font-weight:500;margin:72px 0 6px;display:flex;gap:12px;align-items:baseline}
+.d-doc h2 .no{color:var(--muted);font-size:14px;font-family:var(--font-mono)}
+.d-doc h3{font-size:15px;font-weight:500;margin:28px 0 8px}
+.d-lead{color:var(--text-dim);max-width:900px;margin:0}
+.d-meta{color:var(--muted);font-size:12px;margin-bottom:18px}
+.d-toc{display:flex;flex-wrap:wrap;gap:6px 18px;margin:22px 0 0;font-size:13px}
+.d-toc a{color:var(--text-dim);text-decoration:none}.d-toc a:hover{color:var(--text)}
+.d-principles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}
+.d-pr{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg);padding:16px 18px}
+.d-pr b{display:block;font-weight:500;margin-bottom:4px}
+.d-pr span{color:var(--text-dim);font-size:13px}
+.d-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
+.d-table th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.8px;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--border)}
+.d-table td{padding:10px;border-bottom:1px solid var(--border-2);vertical-align:top;color:var(--text-dim)}
+.d-table td:first-child{color:var(--text)}
+.d-table code,.d-doc p code,.d-doc li code{font-family:var(--font-mono);font-size:12px;background:var(--panel);padding:1px 5px;border-radius:4px;color:var(--text)}
+.d-tag{display:inline-block;font:11px var(--font-mono);padding:1px 7px;border-radius:10px;border:1px solid var(--border);color:var(--text-dim)}
+.d-tag.p0{background:var(--text);color:#151515;border-color:var(--text)}
+.d-tag.p1{color:var(--text);border-color:var(--muted)}
+.d-tag.new{border-color:var(--green);color:var(--green-bright)}
+.d-muted{color:var(--muted)} .d-dim{color:var(--text-dim)}
+.d-doc ul{color:var(--text-dim);padding-left:20px} .d-doc li{margin:3px 0}
+.d-doc li b{color:var(--text);font-weight:500}
+
+/* 原型舞台 */
+.d-stagebar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:18px 0 12px}
+.d-seg{display:inline-flex;flex-wrap:wrap;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:3px}
+.st-tab{height:30px;padding:0 12px;border:0;border-radius:7px;background:none;color:var(--text-dim);font-size:12.5px;cursor:pointer}
+.st-tab:hover{color:var(--text)} .st-tab.on{background:var(--active);color:var(--text)}
+.d-ctl{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);cursor:pointer;user-select:none;padding:0 6px}
+.d-ctl input{accent-color:#cfcfcf}
+.d-play{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12.5px;cursor:pointer}
+.d-play:hover{background:var(--hover)}
+.d-stagewrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
+.d-stage{position:relative;min-width:0}
+.d-notes{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;padding-right:4px}
+.d-notes h4{margin:0 0 10px;font-size:12px;font-weight:500;color:var(--muted);letter-spacing:.8px;text-transform:uppercase}
+.note{display:grid;grid-template-columns:22px 1fr;gap:10px;padding:12px;border:1px solid var(--border-2);border-radius:var(--radius-md);margin-bottom:8px;cursor:pointer;background:var(--bg)}
+.note:hover{border-color:var(--border)} .note.on{border-color:var(--muted)}
+.note .num,.pin{width:20px;height:20px;border-radius:50%;background:#efefef;color:#111;font:600 11px/20px var(--font-sans);text-align:center}
+.note h5{margin:0 0 4px;font-size:13px;font-weight:500;color:var(--text)}
+.note p{margin:0 0 4px;font-size:12.5px;line-height:1.65;color:var(--text-dim)}
+.note p b{color:var(--muted);font-weight:500;margin-right:4px}
+.note p.why{color:var(--muted)}
+.pin{position:absolute;z-index:300;cursor:pointer;box-shadow:0 0 0 3px rgba(0,0,0,.55);transition:transform .12s}
+.pin:hover{transform:scale(1.15)}
+.flash{animation:flash 1.3s ease}
+@keyframes flash{0%,55%{box-shadow:0 0 0 2px #f2f2f2}100%{box-shadow:0 0 0 2px rgba(242,242,242,0)}}
+@media (max-width:1560px){
+  .d-stagewrap{grid-template-columns:1fr}
+  .d-notes{position:static;max-height:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+  .d-notes h4{grid-column:1/-1}.note{margin:0}
+}
+@media (max-width:1100px){.d-principles{grid-template-columns:1fr 1fr}}
+
+/* 前后对比 */
+.d-cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+.d-cmp-col{border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;background:var(--bg)}
+.d-cmp-h{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);padding:9px 14px;border-bottom:1px solid var(--border-2);display:flex;justify-content:space-between}
+.d-cmp-h.after{color:var(--text)}
+.d-cmp-b{padding:22px 22px 26px}
+.d-cmp-why{grid-column:1/-1;margin:-4px 0 0;font-size:13px}
+.app-like{font-size:13px;line-height:1.6;color:var(--text)}
+.d-swatch{width:28px;height:18px;border-radius:4px;border:1px solid #333;display:inline-block;vertical-align:middle}
+.d-states{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:18px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg);margin-top:10px}
+.d-states figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:8px}
+.d-states figcaption{font-size:11px;color:var(--muted)}
+.d-kbd{font:11.5px var(--font-mono);border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;padding:0 6px;color:var(--text);background:var(--bg)}
+</style>
+<style>
+/* ================= 原型 App ================= */
+.app{--sbw:248px;--wsw:420px;position:relative;height:780px;display:grid;grid-template-columns:var(--sbw) minmax(0,1fr) 0px;background:var(--bg);border:1px solid #2e2e2e;border-radius:12px;overflow:hidden;font-size:13px;line-height:1.6;transition:grid-template-columns .22s ease}
+.app.ws-open{grid-template-columns:var(--sbw) minmax(0,1fr) var(--wsw)}
+.app.sb-off{--sbw:0px}
+.ib{width:28px;height:28px;flex:none;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-dim);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .12s,color .12s}
+.ib:hover{background:var(--hover);color:var(--text)}
+.ib.sm{width:22px;height:22px}
+.spin{width:12px;height:12px;flex:none;border:1.5px solid var(--faint);border-top-color:var(--text-dim);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.st-dot{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block}
+.st-dot.attn{background:var(--attention)}
+.st-dot.unread{background:var(--green)}
+.mono{font-family:var(--font-mono)} .muted{color:var(--muted)} .dim{color:var(--text-dim)} .faint{color:var(--faint)}
+.spacer{flex:1}
+.lk{border:0;background:none;color:var(--text-dim);font:inherit;font-size:12.5px;cursor:pointer;padding:3px 6px;border-radius:5px}
+.lk:hover{color:var(--text)}
+.btn{height:30px;padding:0 12px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font:inherit;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{color:var(--text);background:var(--hover)}
+.btn.sm{height:26px;padding:0 10px;font-size:12px}
+.btn.primary{background:var(--primary-bg);border-color:var(--primary-bg);color:var(--primary-fg);font-weight:500}
+.btn.primary:hover{background:var(--primary-hover);border-color:var(--primary-hover)}
+.btn:disabled{opacity:.45;cursor:not-allowed;background:transparent;color:var(--text-dim)}
+.btn.primary:disabled{background:var(--faint);border-color:var(--faint);color:#1a1a1a}
+
+/* 侧栏 */
+.sb{min-width:0;overflow:hidden;background:var(--bg-2);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.app.sb-off .sb{border-right:0}
+.sb-in{width:248px;display:flex;flex-direction:column;height:100%}
+.sb-head{height:44px;flex:none;display:flex;align-items:center;padding:0 8px}
+.sb-actions{padding:0 6px 6px;display:grid;gap:1px}
+.sb-row{height:32px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:var(--radius-sm);color:var(--text-dim);cursor:pointer;border:0;background:none;width:100%;font:inherit;font-size:13px;text-align:left}
+.sb-row:hover{background:var(--hover);color:var(--text)}
+.sb-row .kbd{margin-left:auto;font:11px var(--font-mono);color:var(--muted)}
+.sb-list{flex:1;overflow:auto;padding:0 6px 12px;scrollbar-width:none}
+.grp{display:flex;align-items:center;justify-content:space-between;height:34px;padding:10px 4px 0 10px;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.grp .ib{opacity:0}.grp:hover .ib{opacity:1}
+.proj{display:flex;align-items:center;gap:6px;height:30px;padding:0 6px;border-radius:var(--radius-sm);color:var(--text-dim);position:relative;cursor:pointer}
+.proj:hover{color:var(--text)}
+.proj.has-active::before{content:'';position:absolute;left:-6px;top:7px;bottom:7px;width:2px;border-radius:1px;background:var(--text)}
+.proj .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj .ib{opacity:0}.proj:hover .ib{opacity:1}
+.chat{height:30px;display:flex;align-items:center;gap:6px;padding:0 4px 0 10px;border-radius:var(--radius-sm);color:var(--text-dim);cursor:pointer;margin-bottom:1px}
+.chat.in{margin-left:18px}
+.chat:hover{background:var(--hover);color:var(--text)}
+.chat.active{background:var(--active);color:var(--text)}
+.chat .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat .st{width:22px;height:22px;display:grid;place-items:center;flex:none}
+.chat .more{display:none}
+.chat:hover .st:not(:empty){display:none}
+.chat:hover .more{display:grid}
+.chat.fresh .t{color:var(--text)}
+.sb-foot{padding:6px;border-top:1px solid var(--border-2)}
+
+/* 主区 */
+.main{display:grid;grid-template-rows:44px minmax(0,1fr) auto;min-width:0;min-height:0;position:relative}
+.top{display:flex;align-items:center;gap:6px;padding:0 8px 0 14px;border-bottom:1px solid var(--border);min-width:0}
+.top .sb-show{display:none;margin-left:-6px}
+.app.sb-off .top .sb-show{display:grid}
+.crumb{flex:1;min-width:0;display:flex;align-items:center;white-space:nowrap;overflow:hidden}
+.crumb .p{color:var(--muted)} .crumb .sep{color:var(--faint);margin:0 6px}
+.crumb .c{color:var(--text);padding:3px 5px;margin-left:-5px;border-radius:5px;cursor:text;overflow:hidden;text-overflow:ellipsis}
+.crumb .c:hover{background:var(--hover)}
+.top-status{display:inline-flex;align-items:center;gap:7px;color:var(--text-dim);font-size:12px;font-variant-numeric:tabular-nums;padding:0 6px;white-space:nowrap}
+.top-chg{height:28px;display:inline-flex;align-items:center;gap:7px;padding:0 9px;border:0;border-radius:var(--radius-sm);background:none;color:var(--text-dim);font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+.top-chg:hover{background:var(--hover);color:var(--text)}
+.chat-area{position:relative;overflow-y:auto;min-height:0;scrollbar-width:thin;scrollbar-color:#333 transparent}
+/* 字符池塘：照搬生产 character_pond.css */
+.main{isolation:isolate}
+.main>.character-pond{position:absolute;inset:44px 0 0;width:100%;height:calc(100% - 44px);z-index:-1;pointer-events:none;user-select:none;color:var(--text);--pond-green:var(--ok-dot);opacity:0;transition:opacity .5s ease}
+.main.empty>.character-pond{opacity:1}
+.chat-in{position:relative;max-width:720px;margin:0 auto;padding:28px 28px 20px}
+
+/* 消息 */
+.msg{position:relative}
+.u .b{background:var(--panel);border-radius:12px;padding:10px 14px;font-size:14px;line-height:1.7;white-space:pre-wrap;color:var(--text)}
+.acts{display:flex;gap:2px;height:30px;align-items:center;margin-top:2px;opacity:0;transition:opacity .12s}
+.msg:hover .acts,.notes-on .acts{opacity:1}
+.acts .ib{width:26px;height:26px}
+.proc{margin:14px 0 8px}
+.proc-h{display:inline-flex;align-items:center;gap:8px;max-width:100%;border:0;background:none;color:var(--text-dim);font:inherit;font-size:12.5px;padding:3px 8px 3px 4px;margin-left:-4px;border-radius:var(--radius-sm);cursor:pointer;white-space:nowrap;overflow:hidden}
+.proc-h:hover{background:var(--hover)}
+.proc-h b{font-weight:500;color:var(--text)}
+.proc-h .dim{overflow:hidden;text-overflow:ellipsis}
+.proc-h .chev{display:grid;color:var(--muted);transition:transform .15s}
+.proc.open .proc-h .chev{transform:rotate(90deg)}
+.steps{margin:4px 0 0 9px;padding-left:15px;border-left:1px solid var(--border);display:none}
+.proc.open .steps{display:block}
+.step{display:grid;grid-template-columns:16px 52px minmax(0,1fr) auto;gap:8px;align-items:center;min-height:26px;font-size:12px;color:var(--text-dim);animation:stepIn .3s both}
+.step .si{display:grid;place-items:center;color:var(--muted)}
+.step .v{color:var(--muted)}
+.step .tg{font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step .m{color:var(--muted);font:11.5px var(--font-mono);display:inline-flex;gap:4px;align-items:center}
+.step.cur .tg{color:var(--text)}
+.step.wait .tg,.step.wait .v{color:var(--muted)}
+.step.cmd{cursor:pointer;border-radius:5px;margin-left:-6px;padding-left:6px}
+.step.cmd:hover{background:var(--hover)}
+@keyframes stepIn{from{opacity:0;transform:translateY(3px)}}
+.shell{margin:4px 0 8px;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-md);font:12px/1.6 var(--font-mono);overflow:hidden}
+.shell .cmdl{padding:8px 12px;color:var(--text);border-bottom:1px solid var(--border-2)}
+.shell pre{margin:0;padding:8px 12px;color:var(--text-dim);white-space:pre-wrap}
+.shell .ex{text-align:right;padding:0 12px 6px;color:var(--muted);font-size:11px}
+.a{font-size:14px;line-height:1.75;color:var(--text);margin-top:6px}
+.a p{margin:0 0 12px}
+.a code{font-family:var(--font-mono);font-size:12.5px;background:var(--panel-2);padding:1px 5px;border-radius:4px}
+.a pre{position:relative;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;font:12.5px/1.6 var(--font-mono);margin:0 0 12px;overflow:auto}
+.a pre .lang{position:absolute;top:6px;right:10px;font:10.5px var(--font-sans);color:var(--muted)}
+.result{display:flex;align-items:center;gap:9px;margin:2px 0 0;padding:8px 8px 8px 12px;border:1px solid var(--border);border-radius:var(--radius-md);font-size:12.5px;color:var(--text-dim);min-height:42px}
+.result .files{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-family:var(--font-mono);font-size:11.5px}
+.result .txt{color:var(--text);white-space:nowrap}
+
+/* 审批卡 */
+.appr{position:relative;margin:10px 0 12px;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:visible}
+.appr-h{display:flex;align-items:center;gap:8px;padding:12px 14px 8px;font-weight:500}
+.appr-h .cwd{margin-left:auto;font:11.5px var(--font-mono);color:var(--muted);font-weight:400}
+.appr-cmd{margin:0 14px;background:var(--bg);border:1px solid var(--border-2);border-radius:8px;padding:9px 12px;font:12.5px/1.6 var(--font-mono)}
+.appr-cmd .ps{color:var(--muted);user-select:none;margin-right:8px}
+.appr-f{display:flex;align-items:center;gap:8px;padding:10px 14px 12px}
+.appr-f .hint{flex:1;font-size:12px;color:var(--text-dim)}
+.split{display:inline-flex}
+.split .btn.primary:first-child{border-radius:7px 0 0 7px}
+.split .btn.caret{border-radius:0 7px 7px 0;padding:0 7px;border-left-color:#c4c4c4}
+.appr.done{opacity:.75}
+
+/* 输入框 */
+/* 与生产一致：空白对话时 composer-wrap 抬高，首条消息后 360ms 落到底部 */
+.cw{position:relative;padding:10px 24px 16px;margin-bottom:0;transition:margin-bottom .36s cubic-bezier(.22,1,.36,1);z-index:5}
+.main.empty .cw{margin-bottom:clamp(0px,28%,220px)}
+@media (prefers-reduced-motion:reduce){.cw{transition:none}}
+.cmp{max-width:760px;margin:0 auto;position:relative}
+.box{background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:8px 10px 8px}
+/* Steer / 待发送补充：照搬生产 .pending-inputs / .pending-input，位于输入框上方 */
+.pending{margin:0 10px 8px}
+.pend{display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid var(--border);border-radius:10px;background:var(--panel);font-size:12.5px;color:var(--text-dim);margin-bottom:5px}
+.pend:last-child{margin-bottom:0}
+.pend .lab{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.pend .tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.box textarea{display:block;width:100%;resize:none;border:0;background:transparent;color:var(--text);font:13.5px/1.55 var(--font-sans);padding:6px 4px;min-height:40px;max-height:180px;outline:none}
+.box textarea::placeholder{color:var(--muted)}
+.bar{display:flex;align-items:center;gap:2px;margin-top:2px;min-width:0}
+.chip{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border-radius:7px;border:0;background:transparent;color:var(--text-dim);font:inherit;font-size:12px;cursor:pointer;max-width:200px;white-space:nowrap}
+.chip:hover{background:var(--hover);color:var(--text)}
+.chip.on{background:var(--active);color:var(--text)}
+.chip .lb{overflow:hidden;text-overflow:ellipsis}
+.chip .cv{display:grid;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok-dot);box-shadow:0 0 0 3px var(--ok-dot-ring);flex:none;margin:0 2px}
+/* 发送 / 停止：与生产 app.css .action-slot / .icon-btn 完全一致 */
+.action-slot{width:34px;height:34px;flex:none;display:grid;place-items:center}
+.icon-btn{background:transparent;color:var(--text-dim);border:0;width:34px;height:34px;border-radius:6px;cursor:pointer;display:inline-grid;place-items:center;transition:background .12s,color .12s;padding:0}
+.icon-btn:hover:not(:disabled){color:var(--text)}
+.icon-btn:disabled{color:var(--faint);cursor:not-allowed}
+.icon-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+.icon-btn.send:not(:disabled){color:var(--text)}
+.send-hint{color:var(--faint);font:10.5px var(--font-mono);opacity:0;transition:opacity .12s;margin-left:4px}
+.box:focus-within .send-hint,.bar:hover .send-hint,.notes-on .main.empty .send-hint{opacity:1}
+.jump{position:absolute;left:50%;top:-40px;transform:translateX(-50%);height:28px;padding:0 12px;border-radius:14px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);font:inherit;font-size:12px;display:none;align-items:center;gap:7px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.4);white-space:nowrap}
+.jump.show,.notes-on .jump.avail{display:inline-flex}
+.jump:hover{background:var(--hover)}
+</style>
+<style>
+/* 右侧工作区 */
+.ws{position:relative;min-width:0;overflow:hidden;border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg)}
+.app:not(.ws-open) .ws{border-left:0}
+.ws-resize{position:absolute;left:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:5}
+.ws-resize::after{content:'';position:absolute;left:0;top:0;bottom:0;width:1px}
+.ws-resize:hover::after{background:var(--muted)}
+.ws-h{height:44px;flex:none;display:flex;align-items:center;gap:2px;padding:0 6px 0 10px;border-bottom:1px solid var(--border);min-width:var(--wsw)}
+.tab{height:28px;padding:0 10px;border-radius:var(--radius-sm);border:0;background:none;color:var(--text-dim);font:inherit;font-size:12.5px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.tab:hover{color:var(--text)} .tab.on{background:var(--active);color:var(--text)}
+.tab .n{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ws-b{flex:1;overflow:auto;min-width:var(--wsw)}
+.ws-sub{display:flex;align-items:center;gap:6px;min-height:40px;padding:4px 8px 4px 14px;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border-2)}
+.f-row{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;cursor:pointer;font-size:12.5px}
+.f-row:hover{background:var(--hover)}
+.f-row .cv{display:grid;color:var(--muted);transition:transform .15s}
+.f-row.open .cv{transform:rotate(90deg)}
+.f-st{font:11px var(--font-mono);color:var(--muted);width:12px;text-align:center}
+.f-path{font:12px var(--font-mono);color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-path .dir{color:var(--muted)}
+.f-stat{font:11.5px var(--font-mono);color:var(--muted)}
+.diff{font:12px/1.7 var(--font-mono);border-top:1px solid var(--border-2);border-bottom:1px solid var(--border-2);background:var(--bg-2);overflow-x:auto}
+.dl{display:grid;grid-template-columns:36px 16px minmax(0,1fr);border-left:2px solid transparent;white-space:pre}
+.dl .ln{color:var(--faint);text-align:right;padding-right:8px;user-select:none}
+.dl .mk{color:var(--muted);user-select:none}
+.dl.add{background:var(--diff-add-bg);border-left-color:var(--diff-add-edge)} .dl.add .mk{color:var(--diff-add-mark)}
+.dl.del{background:var(--diff-del-bg);border-left-color:var(--diff-del-edge)} .dl.del .mk{color:var(--diff-del-mark)}
+.dl.hunk{color:var(--muted);background:var(--panel)}
+.ws-empty{padding:72px 32px;text-align:center;color:var(--text-dim);font-size:13px}
+.ws-empty b{display:block;color:var(--text);font-weight:500;margin-bottom:4px}
+.tree{padding:8px 6px}
+.tree .tr{display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:var(--radius-sm);font:12px var(--font-mono);color:var(--text-dim);cursor:pointer}
+.tree .tr:hover{background:var(--hover);color:var(--text)}
+.tree .tr .s{margin-left:auto;color:var(--muted);font-size:11px}
+
+/* 设置 */
+.ovl{position:absolute;inset:0;background:rgba(0,0,0,.55);display:none;place-items:center;z-index:100}
+.ovl.show{display:grid}
+.modal{width:560px;max-height:88%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+.m-h{display:flex;align-items:center;justify-content:space-between;padding:14px 12px 6px 20px}
+.m-h h2{margin:0;font-size:15px;font-weight:500}
+.m-b{overflow:auto;padding:0 20px 16px}
+.sec-t{font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:16px 0 6px}
+.set-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0}
+.set-row .sub{display:block;font-size:11.5px;color:var(--text-dim)}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px}
+.seg button{height:26px;padding:0 12px;border:0;border-radius:6px;background:none;color:var(--text-dim);font:inherit;font-size:12px;cursor:pointer}
+.seg button.on{background:var(--active);color:var(--text)}
+.src{border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:8px;background:var(--bg-2)}
+.src-h{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 8px;cursor:pointer}
+.src-h .cv{display:grid;color:var(--muted);transition:transform .15s}
+.src.open .src-h .cv{transform:rotate(90deg)}
+.src-h .nm{color:var(--text)}
+.src-h .cnt{font-size:12px;color:var(--muted);margin-left:auto;margin-right:6px;font-variant-numeric:tabular-nums}
+.sw{width:30px;height:18px;border-radius:9px;background:var(--faint);position:relative;border:0;cursor:pointer;flex:none;transition:background .15s;padding:0}
+.sw::after{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#a8a8a8;transition:transform .15s,background .15s}
+.sw.on{background:var(--text)} .sw.on::after{transform:translateX(12px);background:var(--bg)}
+.sw:disabled{opacity:.45;cursor:not-allowed}
+.src-b{border-top:1px solid var(--border-2);padding:6px 12px 10px 34px;display:none}
+.src.open .src-b{display:block}
+.src-tools{display:flex;gap:4px;margin:0 0 2px -6px}
+.ck{display:flex;align-items:center;gap:10px;height:28px;font-size:12.5px;color:var(--text-dim);cursor:pointer}
+.ck:hover{color:var(--text)}
+.ck input{accent-color:#d6d6d6;margin:0}
+.m-f{display:flex;align-items:center;gap:8px;padding:12px 16px 12px 20px;border-top:1px solid var(--border-2)}
+.m-f .info{flex:1;font-size:12px;color:var(--muted)}
+
+/* 菜单 & tooltip */
+.menu{position:absolute;z-index:120;min-width:220px;max-width:300px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:0 14px 36px rgba(0,0,0,.5);padding:4px;display:none}
+.menu.show{display:block}
+.mi{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 10px;border:0;border-radius:var(--radius-sm);background:none;color:var(--text-dim);font:inherit;font-size:12.5px;cursor:pointer;text-align:left;white-space:nowrap}
+.mi:hover{background:var(--hover);color:var(--text)}
+.mi .ck2{margin-left:auto;display:grid;color:var(--text)}
+.mi .k{margin-left:auto;font:11px var(--font-mono);color:var(--muted)}
+.msep{height:1px;background:var(--border-2);margin:4px 2px}
+.mlabel{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);padding:6px 10px 2px}
+#tip{position:fixed;z-index:1000;background:var(--tooltip-bg);border:1px solid #363636;color:var(--text);font-size:11.5px;line-height:1.4;padding:4px 8px;border-radius:var(--radius-sm);pointer-events:none;opacity:0;transition:opacity .1s;white-space:nowrap;display:flex;gap:8px;align-items:center}
+#tip.show{opacity:1}
+#tip .k{font:11px var(--font-mono);color:var(--muted)}
+.chat-in{max-width:760px}
+
+/* 工作区标签：可单独关闭，+ 重新打开（与生产行为一致） */
+.wtab{display:inline-flex;align-items:center;height:28px;border-radius:var(--radius-sm)}
+.wtab.on{background:var(--active)}
+.wtab .tab{background:none!important;padding-right:4px}
+.wtab .tab-x{width:20px;height:20px;margin-right:4px;border:0;border-radius:4px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0;opacity:0}
+.wtab:hover .tab-x,.wtab.on .tab-x,.wtab:focus-within .tab-x{opacity:1}
+.wtab .tab-x:hover{color:var(--text);background:var(--hover)}
+.ws-none{padding:80px 28px;text-align:center;color:var(--text-dim);font-size:13px}
+.ws-none .btn{margin:4px}
+
+/* Research：照搬生产 app.css 的 research-* 样式 */
+.drawer-btn{border:0;background:transparent;color:var(--text-dim);font:inherit;font-size:12px;cursor:pointer;padding:3px 6px;border-radius:5px}
+.drawer-btn:hover{color:var(--text)}
+.rs-wrap{padding:10px 14px 16px}
+.rs-head{display:flex;align-items:baseline;gap:8px;padding:0 0 8px;font-size:12px;color:var(--text-dim)}
+.rs-head strong{color:var(--text);font-weight:500;font-size:13px}
+.research-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border-2);margin:0 0 8px;padding:0 0 6px}
+.research-tab{border:0;background:transparent;color:var(--muted);border-radius:5px;padding:5px 8px;cursor:pointer;font:inherit;font-size:12px}
+.research-tab:hover{color:var(--text-dim);background:var(--hover)}
+.research-tab.active{color:var(--text)}
+.research-panel{display:grid;gap:8px}
+.research-card{border-bottom:1px solid var(--border-2);padding:9px 4px 10px}
+.research-card-head{display:flex;align-items:baseline;gap:8px}
+.research-card-title{flex:1;min-width:0;color:var(--text);font-size:13px;overflow-wrap:anywhere}
+.research-card-meta{color:var(--muted);font:11.5px var(--font-mono);margin-top:3px;overflow-wrap:anywhere}
+.research-stance{flex-shrink:0;color:var(--text-dim);font-size:11.5px;background:var(--panel-2);border-radius:4px;padding:2px 5px}
+.research-card-head:has(.research-stance){flex-wrap:wrap}
+.research-card-head:has(.research-stance) .research-card-title{flex-basis:100%}
+.research-quote{margin:7px 0 0;padding-inline-start:9px;border-inline-start:1px solid var(--border-2);color:var(--text-dim);font-size:12.5px;line-height:1.55;white-space:pre-wrap}
+.research-source-section+.research-source-section{margin-top:6px}
+.research-source-section h3{margin:0;padding:6px 4px 0;color:var(--text-dim);font-size:12px;font-weight:500}
+.research-source-link{color:inherit;text-decoration:none}
+.research-source-link:hover{color:var(--text);text-decoration:underline}
+.research-list{margin:0;padding-left:18px;color:var(--text-dim);font-size:12.5px}
+.research-list li{margin:3px 0}
+.research-note-section-head{display:flex;align-items:baseline;gap:8px;padding:7px 4px 2px}
+.research-note-count{width:24px;color:var(--muted);font:11.5px var(--font-mono);flex-shrink:0}
+.research-note-heading{flex:1;color:var(--text);font-size:13px}
+.research-note-body{color:var(--text-dim);font-size:12.5px;line-height:1.6;margin-top:7px}
+.research-note-body p{margin:0 0 6px}
+.research-source-chips{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px;margin-top:8px;color:var(--muted);font:11.5px var(--font-mono)}
+.research-source-chip{border:0;background:transparent;color:var(--text-dim);border-radius:4px;padding:0 4px;font:inherit;cursor:pointer}
+.research-source-chip:hover{background:var(--hover);color:var(--text)}
+.research-graph-toolbar{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+.research-depth{border:0;background:transparent;color:var(--muted);border-radius:5px;padding:4px 7px;cursor:pointer;font:inherit;font-size:12px}
+.research-depth:hover{background:var(--hover);color:var(--text-dim)}
+.research-depth.active{color:var(--text)}
+.research-graph-stage{height:400px;background:var(--bg);border:1px solid var(--border-2);border-radius:6px;overflow:hidden;position:relative}
+.research-graph-stage canvas{display:block;width:100%;height:100%;cursor:grab}
+.research-graph-stage canvas.dragging{cursor:grabbing}
+.research-graph-legend{position:absolute;left:8px;bottom:6px;font-size:11px;color:var(--muted);pointer-events:none;display:flex;gap:12px}
+.research-graph-legend i{display:inline-block;width:14px;border-top:1px solid var(--faint);vertical-align:middle;margin-right:4px}
+.research-graph-legend i.dash{border-top-style:dashed}
+.research-graph-detail{min-height:74px;border-top:1px solid var(--border-2);padding:8px 4px 0}
+.research-graph-detail-title{color:var(--text);font-size:13px}
+.research-graph-detail-meta{color:var(--muted);font:11.5px var(--font-mono);margin-top:3px}
+.research-graph-detail-body{color:var(--text-dim);font-size:12.5px;margin-top:6px}
+.cite{font:11px var(--font-mono);color:var(--text-dim);background:var(--panel-2);border-radius:4px;padding:0 4px;cursor:pointer;vertical-align:1px}
+.cite:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="d-doc">
+
+<header>
+  <div class="d-meta">Codey · UI/UX 改进提案 · 2026-11-25 · 基于 DESIGN.md 视觉语言</div>
+  <h1>让 Codey 一看就会用，同时保持安静</h1>
+  <p class="d-lead">这份提案不换风格：仍然是深色、单色、细线、少装饰的“本地 IDE 面板”。改的是<b>可发现性</b>和<b>状态可见性</b>：用户不用读说明，就知道哪里能点、Codey 现在在干什么、什么时候需要自己处理、改了哪些文件、怎么撤销。</p>
+  <nav class="d-toc">
+    <a href="#s1">1 设计原则</a><a href="#s2">2 交互原型（可点击）</a><a href="#s3">3 改动总览</a>
+    <a href="#s4">4 前后对比</a><a href="#s5">5 组件规范</a><a href="#s6">6 与 DESIGN.md 的偏离（需评审）</a><a href="#s7">7 落地顺序</a>
+  </nav>
+</header>
+
+<h2 id="s1"><span class="no">01</span>设计原则</h2>
+<p class="d-lead">每一项改动都要通过这四条检查。</p>
+<div class="d-principles">
+  <div class="d-pr"><b>状态在外，不用点开</b><span>运行中、等审批、已完成未读，在侧栏和顶栏直接能看到。用户不需要逐个打开聊天去确认。</span></div>
+  <div class="d-pr"><b>能点的东西长得像能点</b><span>开关有开关态，主操作只有一个实心按钮；纯图标按钮必须有 tooltip 和快捷键。</span></div>
+  <div class="d-pr"><b>结果就近给出入口</b><span>改了文件，就在回答下面放 Review / Undo；需要审批，就在卡片上决定。不让用户去菜单里找。</span></div>
+  <div class="d-pr"><b>安静是默认值</b><span>不加颜色块、横幅和 toast。新增元素都用灰阶文字，只在需要时出现，做完就退场。</span></div>
+</div>
+
+<h2 id="s2"><span class="no">02</span>交互原型</h2>
+<p class="d-lead">这是一个可点击的原型，示例数据用来演示真实交互（字符池塘动画、消息操作图标、发送/停止按钮、Research 面板和力导向关系图均直接移植自生产代码）。上方可切换 7 个关键状态，点击白色数字看对应说明；也可以点“播放完整流程”从头体验。</p>
+<div class="d-stagebar">
+  <div class="d-seg" id="stTabs">
+    <button class="st-tab on" data-state="empty">① 新对话</button>
+    <button class="st-tab" data-state="running">② 运行中</button>
+    <button class="st-tab" data-state="approval">③ 等待审批</button>
+    <button class="st-tab" data-state="done">④ 完成 · 有改动</button>
+    <button class="st-tab" data-state="workspace">⑤ 查看改动</button>
+    <button class="st-tab" data-state="research">⑥ Research 证据与关系图</button>
+    <button class="st-tab" data-state="settings">⑦ 设置</button>
+  </div>
+  <label class="d-ctl"><input type="checkbox" id="notesToggle" checked>显示标注</label>
+  <button class="d-play" id="playFlow">▶ 播放完整流程</button>
+</div>
+<div class="d-stagewrap">
+  <div class="d-stage" id="stage">
+    <div class="app notes-on" id="app">
+      <aside class="sb" id="sb"></aside>
+      <section class="main empty" id="main">
+        <canvas class="character-pond" id="pond" aria-hidden="true"></canvas>
+        <div class="top" id="top"></div>
+        <div class="chat-area" id="chatArea">
+          <div class="chat-in" id="chatIn"></div>
+        </div>
+        <div class="cw" id="cw">
+          <div class="cmp">
+            <button class="jump" id="jump" data-act="jump" data-note="12"><span class="st-dot attn"></span>Waiting for your approval<span id="jumpIc"></span></button>
+            <div class="pending" id="pending" hidden></div>
+            <div class="box" id="box" data-note="3">
+              <textarea id="ta" rows="1" placeholder="Ask Codey to build, fix, or explain…"></textarea>
+              <div class="bar" id="bar"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <aside class="ws" id="ws"></aside>
+      <div class="ovl" id="ovl"><div class="modal" id="modal"></div></div>
+      <div class="menu" id="menu"></div>
+    </div>
+  </div>
+  <div class="d-notes" id="notes"></div>
+</div>
+
+<h2 id="s3"><span class="no">03</span>改动总览</h2>
+<p class="d-lead">P0 风险低、价值高，建议先做。P1 需要少量新状态。P2 是锦上添花。“可能涉及”列出的是前端里最相关的文件，供实现时定位。</p>
+<table class="d-table">
+<thead><tr><th>#</th><th>区域</th><th>现在的问题</th><th>建议改法</th><th>优先级</th><th>可能涉及</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>侧栏聊天状态</td><td>多个聊天可以并发运行，但侧栏看不出哪个在跑、哪个在等审批</td><td>行尾状态位：转圈表示运行中，白点表示等你处理，绿点表示已完成但还没打开；悬停时换成 ⋯</td><td><span class="d-tag p0">P0</span></td><td><code>sidebar.ts</code> <code>app.css .session-item</code></td></tr>
+<tr><td>2</td><td>发送 / 停止按钮</td><td>原有透明纸飞机与方形停止已足够克制</td><td><b>保持生产原样</b>（透明描边纸飞机 + 方形停止 + Enter 提示），不做实心圆形按钮</td><td><span class="d-tag">保留</span></td><td><code>composer.ts</code> <code>.icon-btn</code></td></tr>
+<tr><td>3</td><td>输入框结构</td><td>“Choose folder · Research” 悬在框外，看起来像说明文字；Research 开没开很难判断</td><td>放进框内底栏左侧，用带图标的按钮；Research 开启时有浅灰底，图标和文字都变亮</td><td><span class="d-tag p0">P0</span></td><td><code>index.html</code> <code>composer.ts</code></td></tr>
+<tr><td>4</td><td>审批卡</td><td>“Approval required” 没说明要做什么；卡片和过程记录长得差不多，容易被滚过去</td><td>标题用问句，并显示工作目录与独立命令块；只保留一个实心主按钮 Allow once</td><td><span class="d-tag p0">P0</span></td><td><code>shell_approvals.ts</code> <code>command_card.ts</code></td></tr>
+<tr><td>5</td><td>改动结果</td><td>改了哪些文件、怎么看 diff、怎么撤销，都要去右侧 + 菜单里找</td><td>回答末尾加一行：“2 files changed +27 −2 · Review · Undo”</td><td><span class="d-tag p0">P0</span></td><td><code>process.ts</code> <code>changes_drawer.ts</code></td></tr>
+<tr><td>6</td><td>审批离屏提醒</td><td>用户往上翻时不会被打断，这点是对的，但也不知道 Codey 已经停下来等人</td><td>输入框上方出现胶囊“Waiting for your approval ↓”，只负责跳转，不提供批准操作</td><td><span class="d-tag p1">P1</span></td><td><code>conversation_ui.ts</code></td></tr>
+<tr><td>7</td><td>运行计时</td><td>顶栏只显示 Running</td><td>改成 “Running · 0:42”，等宽数字，不跳动</td><td><span class="d-tag p1">P1</span></td><td><code>run_lifecycle.ts</code> <code>.status</code></td></tr>
+<tr><td>8</td><td>过程组与步骤图标</td><td>运行中和完成后是否展开不够直观，工具行纯文本扫视慢</td><td>运行中展开并实时追加，用清晰图标区分 Read / Search / Edit / Ran；完成后收成一行带耗时</td><td><span class="d-tag p1">P1</span></td><td><code>process.ts</code></td></tr>
+<tr><td>9</td><td>右侧工作区标签</td><td>Files / Changes / Research 默认都藏在 + 菜单里</td><td>默认打开 Changes / Files / Research 并带计数，<b>每个标签仍可点 × 单独关闭</b>，点 + 可重开或添加其他面板，整个右侧栏也可随时关闭</td><td><span class="d-tag p1">P1</span></td><td><code>workspace.ts</code> <code>workspace.css</code></td></tr>
+<tr><td>10</td><td>顶栏改动入口</td><td>没有全局入口</td><td>有未审阅改动时，顶栏出现“2 changed +27 −2”；没有改动时不占位置</td><td><span class="d-tag p1">P1</span></td><td><code>workspace.ts</code></td></tr>
+<tr><td>11</td><td>空白新对话</td><td>需要保持极简不打扰</td><td><b>保持生产原样</b>：完整保留字符池塘动画与输入框 360ms 下落动画，不加任何标题、引导语或快捷提示</td><td><span class="d-tag">保留</span></td><td><code>conversation_ui.ts</code> <code>character_pond.ts</code></td></tr>
+<tr><td>12</td><td>消息操作</td><td>用户消息上放分叉容易误导</td><td>用户消息只保留 Copy + Edit；回答保留 Copy + 现有分叉箭头图标（<code>message_icons.ts</code>）</td><td><span class="d-tag p0">P0</span></td><td><code>messages.ts</code> <code>message_icons.ts</code></td></tr>
+<tr><td>13</td><td>左右侧栏开关 + Tooltip</td><td>☰ 通常表示“打开菜单”，实际作用却是收起侧栏；纯图标缺快捷键提示</td><td>左右侧栏采用对称面板开关图标，补上 Ctrl+B / Ctrl+J，统一 450ms tooltip</td><td><span class="d-tag">P2</span></td><td><code>index.html</code> <code>icon_button.ts</code></td></tr>
+<tr><td>14</td><td>设置</td><td>字号滑块和来源总开关都不够直观</td><td>字号改成三段分段控件；来源行显示“3 of 5 models”并用标准开关；保存条显示改动数</td><td><span class="d-tag">P2</span></td><td><code>settings.ts</code> <code>model_settings.ts</code></td></tr>
+<tr><td>15</td><td>模型菜单 &amp; Research 面板</td><td>模型菜单缺管理入口；Research 需与新右侧栏无缝融合</td><td>模型菜单分组并加 “Manage models…”；Research 完整保留 Evidence / Sources / Graph（含 Depth 1/2/3 与力导向画布）/ Notes 四标签</td><td><span class="d-tag p1">P1</span></td><td><code>provider_ui.ts</code> <code>research_drawer.ts</code> <code>research_graph.ts</code></td></tr>
+</tbody></table>
+
+<h2 id="s4"><span class="no">04</span>前后对比</h2>
+<p class="d-lead">左侧尽量还原现在的样子，右侧是建议。右侧部分可以悬停查看 tooltip。</p>
+
+<h3>输入框</h3>
+<div class="d-cmp app-like">
+  <div class="d-cmp-col"><div class="d-cmp-h">现在</div><div class="d-cmp-b">
+    <div style="font-size:11.5px;color:var(--text-dim);padding:0 2px 6px">Choose folder <span class="faint">·</span> Research</div>
+    <div class="box"><div style="padding:12px 14px 2px;font-size:13.5px">Fix the snake collision bug</div>
+      <div class="bar"><span class="dot"></span><span class="dim" style="font-size:12px;margin:0 6px 0 4px">DeepSeek ⌄</span><span class="dim" style="font-size:12px">High ⌄</span><span class="spacer"></span><span class="mono faint" style="font-size:11px;margin-right:6px">Enter</span><span class="ib" style="color:var(--text)"><i data-ic="send"></i></span></div></div>
+  </div></div>
+  <div class="d-cmp-col"><div class="d-cmp-h after">建议<span>#3（保留原发送/停止）</span></div><div class="d-cmp-b">
+    <div class="box"><div style="padding:6px 4px;font-size:13.5px">Fix the snake collision bug</div>
+      <div class="bar"><button class="chip" data-tip="Working folder"><i data-ic="folder"></i><span class="lb">snake-game</span><span class="cv"><i data-ic="chevD" data-s="12"></i></span></button><button class="chip on" data-tip="Research is on · answers cite opened sources"><i data-ic="globe"></i>Research</button><span class="spacer"></span><button class="chip" data-tip="Choose model"><span class="dot"></span>DeepSeek<span class="cv"><i data-ic="chevD" data-s="12"></i></span></button><button class="chip" data-tip="Thinking effort">High<span class="cv"><i data-ic="chevD" data-s="12"></i></span></button><span class="send-hint" style="opacity:1">Enter</span><span class="action-slot"><button class="icon-btn send" data-tip="Send" data-kbd="Enter"><svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg></button></span></div></div>
+  </div></div>
+  <p class="d-cmp-why d-dim">上下文、模型和发送都在同一个框里，读起来就是“这些设置作用于这条消息”。Research 的开关状态从文字亮度改成按钮底色，可以一眼判断；右侧的发送（纸飞机）和停止（方块）按钮完全保留现有样式。</p>
+</div>
+
+<h3>侧栏</h3>
+<div class="d-cmp app-like">
+  <div class="d-cmp-col"><div class="d-cmp-h">现在</div><div class="d-cmp-b" style="background:var(--bg-2)">
+    <div style="padding:0 2px 8px"><span class="ib"><i data-ic="menu"></i></span></div>
+    <div class="grp" style="padding-top:0">Projects</div>
+    <div class="proj has-active" style="margin-left:6px"><span class="cv muted" style="display:grid"><i data-ic="chevD" data-s="12"></i></span><span class="nm">snake-game</span></div>
+    <div class="chat in active"><span class="t">Fix collision bug</span></div>
+    <div class="chat in"><span class="t">Add high score</span></div>
+    <div class="chat in"><span class="t">Refactor renderer</span></div>
+  </div></div>
+  <div class="d-cmp-col"><div class="d-cmp-h after">建议<span>#1 #13</span></div><div class="d-cmp-b" style="background:var(--bg-2)">
+    <div style="padding:0 2px 8px"><span class="ib" data-tip="Hide sidebar" data-kbd="Ctrl+B"><i data-ic="panel"></i></span></div>
+    <div class="grp" style="padding-top:0">Projects</div>
+    <div class="proj has-active" style="margin-left:6px"><span class="cv muted" style="display:grid"><i data-ic="chevD" data-s="12"></i></span><span class="nm">snake-game</span></div>
+    <div class="chat in active"><span class="t">Fix collision bug</span><span class="st"><span class="st-dot attn" data-tip="Needs your approval"></span></span></div>
+    <div class="chat in fresh"><span class="t">Add high score</span><span class="st"><span class="st-dot unread" data-tip="Finished · not opened yet"></span></span></div>
+    <div class="chat in"><span class="t">Refactor renderer</span><span class="st"><span class="spin" data-tip="Running"></span></span></div>
+  </div></div>
+  <p class="d-cmp-why d-dim">三种状态有明确优先级：等你处理（白点）高于运行中（转圈），运行中又高于未读结果（绿点，标题同时变亮）。打开对应聊天后未读点消失。状态都不带文字，含义放在 tooltip 里。</p>
+</div>
+
+<h3>审批卡</h3>
+<div class="d-cmp app-like">
+  <div class="d-cmp-col"><div class="d-cmp-h">现在</div><div class="d-cmp-b">
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+      <div style="font-size:12.5px">Approval required</div>
+      <div class="muted" style="font-size:11.5px">Runs in E:\snake-game</div>
+      <div class="mono" style="font-size:12.5px;margin:6px 0 10px">$ pytest -q</div>
+      <div style="display:flex;gap:8px"><span class="lk" style="padding:3px 0">Deny</span><span style="font-weight:500;font-size:12.5px;padding:3px 0">Allow once ⌄</span></div>
+    </div>
+  </div></div>
+  <div class="d-cmp-col"><div class="d-cmp-h after">建议<span>#4</span></div><div class="d-cmp-b">
+    <div class="appr" style="margin:0"><div class="appr-h"><i data-ic="term"></i>Run this command?<span class="cwd">E:\snake-game</span></div>
+      <div class="appr-cmd"><span class="ps">$</span>pytest -q</div>
+      <div class="appr-f"><span class="hint">Codey pauses until you decide.</span><button class="btn">Deny</button><span class="split"><button class="btn primary">Allow once</button><button class="btn primary caret" data-tip="More allow options"><i data-ic="chevD" data-s="12"></i></button></span></div></div>
+  </div></div>
+  <p class="d-cmp-why d-dim">标题从状态描述改成需要用户回答的问句；命令放进深色等宽块，复制时不带 <code>$</code>。仍然不使用红绿色，安全感来自文案和按钮位置：拒绝在左，允许在右。</p>
+</div>
+
+<h3>完成后的回答</h3>
+<div class="d-cmp app-like">
+  <div class="d-cmp-col"><div class="d-cmp-h">现在</div><div class="d-cmp-b">
+    <div class="dim" style="font-size:12.5px;margin-bottom:8px">▸ Worked · read 1 file · edited 2 files · ran 1 command</div>
+    <div class="a" style="margin:0"><p>The snake died because two quick key presses within one tick could reverse it into its own neck…</p></div>
+    <div class="muted" style="font-size:12px">（查看改动：右上角工作区 → + → Changes）</div>
+  </div></div>
+  <div class="d-cmp-col"><div class="d-cmp-h after">建议<span>#5 #8</span></div><div class="d-cmp-b">
+    <div class="proc" style="margin:0 0 6px"><button class="proc-h"><span class="chev"><i data-ic="chevR" data-s="12"></i></span><b>Worked for 1m 12s</b><span class="dim">· read 1 file · edited 2 files · ran 1 command</span></button></div>
+    <div class="a" style="margin:0"><p>The snake died because two quick key presses within one tick could reverse it into its own neck…</p></div>
+    <div class="result"><i data-ic="file" data-s="14"></i><span class="txt">2 files changed</span><span class="mono muted" style="font-size:11.5px">+27 −2</span><span class="files">game.py, tests/test_snake.py</span><span class="spacer"></span><button class="lk">Review</button><button class="lk">Undo</button></div>
+  </div></div>
+  <p class="d-cmp-why d-dim">结果行就是这一轮的“回执”：改了几个文件、多少行，下一步可以 Review 或 Undo。统计数字保持灰色，红绿色只在 diff 里出现。Undo 需要原地二次确认，复用现有 Restore 的锁和哈希校验。</p>
+</div>
+
+<h2 id="s5"><span class="no">05</span>组件规范</h2>
+<h3>颜色令牌</h3>
+<p class="d-lead">原有令牌全部保留。新增的只有一组“单色主操作”和一个“需要注意”的别名，仍然不引入蓝、紫、黄。</p>
+<table class="d-table">
+<thead><tr><th>令牌</th><th>色块</th><th>值</th><th>用途</th><th></th></tr></thead>
+<tbody>
+<tr><td><code>--bg</code> / <code>--bg-2</code></td><td><span class="d-swatch" style="background:var(--bg)"></span> <span class="d-swatch" style="background:var(--bg-2)"></span></td><td class="mono">#181818 / #1c1c1c</td><td>画布 / 侧栏与输入框</td><td></td></tr>
+<tr><td><code>--panel</code> / <code>--panel-2</code></td><td><span class="d-swatch" style="background:var(--panel)"></span> <span class="d-swatch" style="background:var(--panel-2)"></span></td><td class="mono">#202020 / #262626</td><td>用户消息、卡片、菜单 / 嵌套面板与待处理条</td><td></td></tr>
+<tr><td><code>--hover</code> / <code>--active</code></td><td><span class="d-swatch" style="background:var(--hover)"></span> <span class="d-swatch" style="background:var(--active)"></span></td><td class="mono">#2a2a2a / #2f2f2f</td><td>悬停 / 选中行、开启的开关按钮、当前标签</td><td></td></tr>
+<tr><td><code>--text</code> … <code>--faint</code></td><td><span class="d-swatch" style="background:var(--text)"></span> <span class="d-swatch" style="background:var(--text-dim)"></span> <span class="d-swatch" style="background:var(--muted)"></span> <span class="d-swatch" style="background:var(--faint)"></span></td><td class="mono">#e6e6e6 #a0a0a0 #6b6b6b #4a4a4a</td><td>四级文字</td><td></td></tr>
+<tr><td><code>--green</code></td><td><span class="d-swatch" style="background:var(--green)"></span></td><td class="mono">#78a58b</td><td>模型可用点、diff 新增；<b>扩展：</b>侧栏“已完成未读”点</td><td><span class="d-tag new">扩展用途</span></td></tr>
+<tr><td><code>--primary-bg</code> / <code>-fg</code> / <code>-hover</code></td><td><span class="d-swatch" style="background:var(--primary-bg)"></span> <span class="d-swatch" style="background:var(--primary-fg)"></span> <span class="d-swatch" style="background:#fff"></span></td><td class="mono">#e6e6e6 / #161616 / #ffffff</td><td>审批与确认类区域的主操作：Allow once、Save changes、Undo changes（输入框 Send / Stop 保持原透明图标）</td><td><span class="d-tag new">新增</span></td></tr>
+<tr><td><code>--attention</code></td><td><span class="d-swatch" style="background:var(--attention)"></span></td><td class="mono">= --text</td><td>侧栏与离屏提示胶囊中“等你处理”的白点</td><td><span class="d-tag new">新增</span></td></tr>
+<tr><td><code>--tooltip-bg</code></td><td><span class="d-swatch" style="background:var(--tooltip-bg)"></span></td><td class="mono">#2b2b2b</td><td>统一 tooltip 背景</td><td><span class="d-tag new">新增</span></td></tr>
+<tr><td><code>--radius-sm/md/lg</code></td><td></td><td class="mono">6 / 10 / 14px</td><td>行与图标按钮 / 卡片与菜单 / 输入框与对话框</td><td><span class="d-tag new">新增</span></td></tr>
+</tbody></table>
+
+<h3>字号</h3>
+<table class="d-table">
+<thead><tr><th>角色</th><th>规格</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>对话正文</td><td class="mono">14 / 1.75 sans</td><td>用户消息与回答相同</td></tr>
+<tr><td>输入框</td><td class="mono">13.5 / 1.6 sans</td><td>不变</td></tr>
+<tr><td>界面正文 / 侧栏</td><td class="mono">13 sans</td><td>不变</td></tr>
+<tr><td>底栏按钮、结果行、过程标题</td><td class="mono">12–12.5 sans</td><td>可点击小字一律用 --text-dim，保证 ≥ 4.5:1</td></tr>
+<tr><td>工具行、路径、统计</td><td class="mono">12 / 11.5 mono</td><td>不变</td></tr>
+<tr><td>分组标签</td><td class="mono">10.5 uppercase +1px</td><td>不变</td></tr>
+</tbody></table>
+
+<h3>按钮与控件状态</h3>
+<div class="d-states app-like">
+  <figure><button class="btn">Deny</button><figcaption>次要 · 常态</figcaption></figure>
+  <figure><button class="btn primary">Allow once</button><figcaption>主操作（单色实心）</figcaption></figure>
+  <figure><button class="btn primary" disabled>Save changes</button><figcaption>主操作 · 禁用</figcaption></figure>
+  <figure><button class="chip"><i data-ic="globe"></i>Research</button><figcaption>开关 · 关</figcaption></figure>
+  <figure><button class="chip on"><i data-ic="globe"></i>Research</button><figcaption>开关 · 开</figcaption></figure>
+  <figure><button class="icon-btn send" disabled><svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg></button><figcaption>Send · 无内容（原样）</figcaption></figure>
+  <figure><button class="icon-btn send"><svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg></button><figcaption>Send · 可发送（原样）</figcaption></figure>
+  <figure><button class="icon-btn"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg></button><figcaption>Stop（原样）</figcaption></figure>
+  <figure><button class="ib" data-tip="Copy"><i data-ic="copy"></i></button><figcaption>图标按钮（悬停）</figcaption></figure>
+  <figure><button class="lk">Review</button><figcaption>文字操作</figcaption></figure>
+  <figure><button class="sw on"></button><figcaption>开关 · 开</figcaption></figure>
+  <figure><button class="sw"></button><figcaption>开关 · 关</figcaption></figure>
+</div>
+<ul>
+  <li><b>悬停：</b>行、图标按钮和 chip 统一使用 <code>--hover</code> 底色，文字变成 <code>--text</code>，过渡 120ms。</li>
+  <li><b>键盘焦点：</b>保留现有 1px <code>--text-dim</code> 外框；鼠标点击不出现焦点框。输入框聚焦时不变框，这一点不变。</li>
+  <li><b>命中区域：</b>桌面端不小于 28px，触屏不小于 44px；没有 hover 能力的设备，次要操作常显。</li>
+  <li><b>Tooltip：</b>450ms 延迟，格式为“名称 + 快捷键”；按钮上已有可见文字时不再重复。</li>
+</ul>
+
+<h3>动效</h3>
+<ul>
+  <li>悬停和颜色：120ms。菜单出现：不做动画。右侧工作区展开：220ms ease。</li>
+  <li>空白页输入框落到底部：360ms <code>cubic-bezier(.22, 1, .36, 1)</code>（与生产一致），字符池塘 500ms 淡出。<code>prefers-reduced-motion</code> 下输入框直接切换。</li>
+  <li>过程行逐条出现：300ms 位移 3px。转圈：0.8s 线性。不做呼吸灯，也不做发光脉冲。</li>
+</ul>
+
+<h3>快捷键</h3>
+<table class="d-table">
+<thead><tr><th>按键</th><th>作用</th><th></th></tr></thead>
+<tbody>
+<tr><td><span class="d-kbd">Ctrl N</span></td><td>新对话</td><td></td></tr>
+<tr><td><span class="d-kbd">Ctrl K</span></td><td>命令面板，也可以搜索聊天和项目；侧栏 Search 行会常显这个提示</td><td></td></tr>
+<tr><td><span class="d-kbd">Ctrl F</span></td><td>当前对话搜索</td><td></td></tr>
+<tr><td><span class="d-kbd">Ctrl ,</span></td><td>设置</td><td></td></tr>
+<tr><td><span class="d-kbd">Ctrl B</span></td><td>显示 / 隐藏侧栏</td><td><span class="d-tag new">新增</span></td></tr>
+<tr><td><span class="d-kbd">Ctrl J</span></td><td>显示 / 隐藏右侧工作区</td><td><span class="d-tag new">新增</span></td></tr>
+<tr><td><span class="d-kbd">Enter</span> / <span class="d-kbd">Shift Enter</span></td><td>发送 / 换行。Enter 永远不会批准命令</td><td></td></tr>
+</tbody></table>
+
+<h3>窄屏（≤ 720px）</h3>
+<ul>
+  <li>侧栏改成覆盖层，从左滑入，点击遮罩关闭；右侧工作区改成全屏覆盖层，头部带返回箭头。</li>
+  <li>输入框底栏空间不够时，folder chip 只保留图标，Research 只保留图标并保留开启底色；模型名截断。</li>
+  <li>结果行折成两行：第一行是统计，第二行放 Review / Undo。</li>
+</ul>
+
+<h2 id="s6"><span class="no">06</span>与 DESIGN.md 的偏离（需要评审）</h2>
+<p class="d-lead">以下几处与当前 DESIGN.md 的明确条款不同。我认为它们对“一看就会用”有实际帮助，但需要团队确认后再同步修改 DESIGN.md。</p>
+<table class="d-table">
+<thead><tr><th>条款</th><th>DESIGN.md 现在</th><th>建议</th><th>理由</th></tr></thead>
+<tbody>
+<tr><td>§5.6 上下文行</td><td>Choose folder · Research 在输入框上方，纯文字</td><td>放进框内底栏，带图标；Research 开启时显示 --active 底色</td><td>纯文字看起来像说明，开关状态也看不出来</td></tr>
+<tr><td>§1 / §5.3 图标按钮</td><td>悬停只提亮图标，并删除了不少 native tooltip</td><td>悬停加 --hover 底色，统一使用自定义 tooltip</td><td>纯图标的含义和快捷键需要可发现</td></tr>
+<tr><td>§2 绿色家族</td><td>绿色只用于指定角色</td><td>增加“侧栏已完成未读”点</td><td>和“可用 / 完成”的语义一致，面积很小</td></tr>
+<tr><td>§5.4 顶栏与工作区</td><td>空闲时为空；工作区默认仅由 + 菜单打开</td><td>有改动时顶栏显示“N changed”；工作区默认打开 Changes / Files / Research，但每个标签可单独点 × 关闭，点 + 可随时重开</td><td>改动和 Research 是核心产出，既容易发现又不强制占屏</td></tr>
+<tr><td>§5.5 用户消息操作</td><td>Copy / Edit / Fork</td><td>用户消息只留 Copy / Edit，Fork 只保留在回答下方（沿用原分叉箭头图标）</td><td>减少用户消息下方不必要的图标噪音</td></tr>
+<tr><td>§5.6 模型菜单</td><td>只包含模型</td><td>底部加 “Manage models…”</td><td>菜单里没有想要的模型时，用户自然会在这里找</td></tr>
+<tr><td>§5.5 审批卡</td><td>普通 --panel 卡片</td><td>标题用问句，命令放进深色等宽块，Allow once 用单色实心主按钮</td><td>更清晰地传达待决策动作与命令内容；不使用红绿色</td></tr>
+</tbody></table>
+<p class="d-dim">保持不变的部分：深色单色、原有 Send/Stop 按钮与图标、现有分叉图标、绿色可用点、de-bubbled 回答、过程收起、diff 配色、生产字符池塘、Research 四标签与力导向关系图、侧栏结构与条目、设置内容范围，以及所有执行、授权和恢复语义。</p>
+
+<h2 id="s7"><span class="no">07</span>落地顺序</h2>
+<ul>
+  <li><b>第一批（P0，约 1 周）：</b>侧栏状态位、输入框底栏重排和 Research 开关态（保留原 Send/Stop）、审批卡样式、去掉用户消息分叉、回答结果行（Review 复用现有 Changes，Undo 复用现有 Restore）。都是表现层改动，不改协议。</li>
+  <li><b>第二批（P1）：</b>审批离屏胶囊、运行计时、过程组展开规则与步骤图标、右侧工作区可关闭默认标签（含 Research 四标签与 Graph）和空状态、顶栏改动入口。需要在前端状态里增加“未读完成”和“有未审阅改动”两个派生字段。</li>
+  <li><b>第三批（P2）：</b>统一 tooltip、侧栏图标与 Ctrl+B / Ctrl+J、设置控件、模型菜单入口。</li>
+  <li><b>验证：</b>每一批都在 1280×800 和 720px 宽度下截图对比；键盘走查 Tab 顺序与焦点；对比度检查所有可点击小字不低于 4.5:1；补齐现有 <code>*.test.ts</code> 中受影响的 DOM 断言。</li>
+</ul>
+
+</div><!-- /d-doc -->
+<div id="tip"></div>
+
+<script>
+const I={
+  panel:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/>',
+  layout:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  newchat:'<path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.5 3.5a2.1 2.1 0 0 1 3 3L13 14l-4 1 1-4Z"/>',
+  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+  folder:'<path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  gear:'<path d="m9 3-.7 2.4-2 .9L4 5.7 2 9l1.7 1.7v2.6L2 15l2 3.3 2.3-.6 2 .9L9 21h6l.7-2.4 2-.9 2.3.6 2-3.3-1.7-1.7v-2.6L22 9l-2-3.3-2.3.6-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/>',
+  chevD:'<path d="m6 9 6 6 6-6"/>', chevR:'<path d="m9 6 6 6-6 6"/>',
+  send:'<path d="M3 11 21 3l-7 18-3-8-8-2Z"/>',
+  stop:'<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/>',
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>',
+  pencil:'<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z"/>',
+  fork:'<circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v1a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4V7M12 12v5"/>',
+  term:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',
+  file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/>',
+  read:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  check:'<path d="m5 12 5 5 9-10"/>', x:'<path d="m6 6 12 12M18 6 6 18"/>',
+  more:'<circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/>',
+  shield:'<path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6Z"/>',
+  arrowD:'<path d="M12 5v14M6 13l6 6 6-6"/>',
+  undo:'<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  upload:'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+  cmdk:'<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3Z"/>',
+};
+const ic=(n,s=16)=>`<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]||''}</svg>`;
+I.edit=I.pencil;
+/* 生产图标原样引用：frontend/src/message_icons.ts、public/assets/new-chat.svg、index.html 的 send/stop */
+const PI={
+  copy:{vb:'0 0 21 21',body:'<path fill="currentColor" d="M13.468 11.1216C13.468 10.4107 13.468 9.91717 13.4367 9.53369C13.4137 9.25191 13.3758 9.0622 13.3244 8.91846L13.2687 8.78858C13.1148 8.48652 12.8803 8.23344 12.593 8.05713L12.466 7.98584C12.308 7.90546 12.0963 7.84854 11.7209 7.81787C11.3374 7.78656 10.8439 7.78662 10.133 7.78662H7.29999C6.58895 7.78662 6.09562 7.78654 5.7121 7.81787C5.43015 7.84091 5.24064 7.87872 5.09686 7.93018L4.96698 7.98584C4.66487 8.13977 4.41184 8.37419 4.23554 8.66162L4.16522 8.78858C4.08477 8.94657 4.02794 9.15811 3.99725 9.53369C3.96594 9.91718 3.96503 10.4107 3.96503 11.1216V13.9546C3.96503 14.6656 3.96592 15.159 3.99725 15.5425C4.02796 15.9182 4.08471 16.1296 4.16522 16.2876L4.23554 16.4136C4.41185 16.7012 4.66472 16.9353 4.96698 17.0894L5.09686 17.146C5.24061 17.1974 5.43024 17.2343 5.7121 17.2573C6.09562 17.2887 6.58895 17.2896 7.29999 17.2896H10.133C10.8439 17.2896 11.3374 17.2886 11.7209 17.2573C12.0965 17.2266 12.308 17.1698 12.466 17.0894L12.593 17.019C12.8804 16.8427 13.1148 16.5897 13.2687 16.2876L13.3244 16.1577C13.3759 16.0139 13.4137 15.8244 13.4367 15.5425C13.468 15.159 13.468 14.6656 13.468 13.9546V11.1216ZM14.798 13.1196C15.2528 13.118 15.6011 13.1147 15.8879 13.0913C16.2634 13.0606 16.475 13.0038 16.633 12.9233L16.759 12.8521C17.0466 12.6757 17.2808 12.4228 17.4348 12.1206L17.4914 11.9907C17.5428 11.847 17.5797 11.6572 17.6027 11.3755C17.634 10.992 17.6349 10.4985 17.6349 9.7876V6.95459C17.6349 6.24355 17.6341 5.75022 17.6027 5.3667C17.5797 5.08484 17.5428 4.89522 17.4914 4.75147L17.4348 4.62158C17.2807 4.31933 17.0466 4.06645 16.759 3.89014L16.633 3.81982C16.475 3.73932 16.2636 3.68256 15.8879 3.65186C15.5044 3.62052 15.011 3.61963 14.3 3.61963H11.467C10.7561 3.61963 10.2626 3.62054 9.87909 3.65186C9.59738 3.67487 9.40759 3.71179 9.26386 3.76318L9.13397 3.81982C8.83175 3.97382 8.57885 4.20802 8.40253 4.49561L8.33124 4.62158C8.25079 4.77957 8.19396 4.99114 8.16327 5.3667C8.13984 5.65352 8.13561 6.00178 8.13397 6.45654H10.133C10.822 6.45654 11.3791 6.4559 11.8293 6.49268C12.2873 6.5301 12.6937 6.6093 13.0705 6.80127L13.2883 6.92334C13.7839 7.22739 14.1878 7.66313 14.4533 8.18408L14.5197 8.32666C14.6642 8.66318 14.7291 9.02433 14.7619 9.42529C14.7987 9.8755 14.798 10.4326 14.798 11.1216V13.1196ZM18.965 9.7876C18.965 10.4766 18.9657 11.0337 18.9289 11.4839C18.8961 11.8848 18.8311 12.246 18.6867 12.5825L18.6203 12.7251C18.3548 13.246 17.9509 13.6818 17.4553 13.9858L17.2365 14.1079C16.8599 14.2998 16.4541 14.3791 15.9963 14.4165C15.6592 14.444 15.2624 14.4481 14.7951 14.4497C14.7935 14.917 14.7894 15.3138 14.7619 15.6509C14.7292 16.0516 14.664 16.4122 14.5197 16.7485L14.4533 16.8911C14.1878 17.4122 13.7841 17.8487 13.2883 18.1528L13.0705 18.2749C12.6937 18.4669 12.2873 18.5461 11.8293 18.5835C11.3791 18.6203 10.822 18.6196 10.133 18.6196H7.29999C6.6109 18.6196 6.05394 18.6203 5.6037 18.5835C5.20305 18.5508 4.84233 18.4855 4.50604 18.3413L4.36347 18.2749C3.84243 18.0094 3.40584 17.6056 3.10175 17.1099L2.97968 16.8911C2.78787 16.5145 2.70849 16.1087 2.67108 15.6509C2.6343 15.2006 2.63495 14.6437 2.63495 13.9546V11.1216C2.63495 10.4326 2.63431 9.8755 2.67108 9.42529C2.7085 8.96729 2.78771 8.56084 2.97968 8.18408L3.10175 7.96631C3.40585 7.47049 3.84235 7.06679 4.36347 6.80127L4.50604 6.73486C4.84236 6.59059 5.20302 6.52542 5.6037 6.49268C5.9405 6.46516 6.33707 6.4601 6.80389 6.4585C6.8055 5.99167 6.81056 5.5951 6.83807 5.2583C6.87549 4.80047 6.95482 4.39471 7.14667 4.01807L7.26874 3.79932C7.5728 3.30371 8.00855 2.89973 8.52948 2.63428L8.67206 2.56787C9.00854 2.42345 9.36978 2.35844 9.77069 2.32568C10.2209 2.28891 10.778 2.28955 11.467 2.28955H14.3C14.9891 2.28955 15.546 2.2889 15.9963 2.32568C16.4541 2.3631 16.8599 2.44247 17.2365 2.63428L17.4553 2.75635C17.951 3.06044 18.3548 3.49703 18.6203 4.01807L18.6867 4.16065C18.8309 4.49694 18.8962 4.85765 18.9289 5.2583C18.9657 5.70854 18.965 6.2655 18.965 6.95459V9.7876Z"/>'},
+  edit:{vb:'0 0 21 21',body:'<path fill="currentColor" d="M11.7313 4.20472C13.1489 2.92391 15.3377 2.96644 16.7039 4.33265L16.8318 4.46742C18.0713 5.8393 18.0713 7.93343 16.8318 9.30531L16.7039 9.44007L10.4119 15.7311C10.0884 16.0546 9.85387 16.2917 9.62188 16.4821L9.3875 16.6588C9.18236 16.799 8.96432 16.9196 8.73711 17.0192L8.50762 17.1119C8.32585 17.1785 8.13845 17.2266 7.92168 17.2711L7.15703 17.4069L4.76348 17.8053C4.62062 17.8291 4.46916 17.8552 4.34063 17.8649C4.24185 17.8723 4.10835 17.875 3.9627 17.8395L3.81426 17.7907C3.59124 17.695 3.40749 17.5271 3.2918 17.316L3.2459 17.2223C3.1596 17.0209 3.16176 16.8276 3.17168 16.6959C3.18138 16.5674 3.20744 16.4159 3.23125 16.2731L3.62969 13.8795L3.76445 13.1149C3.80902 12.898 3.85797 12.7108 3.92461 12.5289L4.01738 12.2985C4.11693 12.0715 4.23774 11.854 4.37774 11.6491L4.55352 11.4147C4.74395 11.1825 4.98173 10.9484 5.30547 10.6246L11.5965 4.33265L11.7313 4.20472ZM6.2459 11.5651C5.89673 11.9142 5.71261 12.0998 5.58672 12.2526L5.47539 12.3991C5.38197 12.5358 5.30159 12.6812 5.23516 12.8327L5.17363 12.9869C5.1333 13.0971 5.1025 13.2125 5.06817 13.3815L4.94121 14.0983L4.54277 16.4918L4.5418 16.4938H4.54473L6.93828 16.0944L7.65508 15.9684C7.82408 15.9341 7.93949 15.9033 8.04961 15.8629L8.20293 15.8014C8.35464 15.7349 8.49956 15.6538 8.63652 15.5602L8.78399 15.4498C8.93677 15.3239 9.12233 15.1398 9.47149 14.7907L14.4588 9.80238L11.2332 6.57679L6.2459 11.5651ZM15.7635 5.27308C14.9282 4.43776 13.6058 4.38573 12.7098 5.11683L12.5369 5.27308L12.1736 5.63636L15.4002 8.86195L15.7635 8.49964L15.9197 8.32581C16.6016 7.48961 16.6016 6.28311 15.9197 5.44691L15.7635 5.27308Z"/>'},
+  branch:{vb:'0 0 16 16',body:'<path d="M12.6633 9.4751C12.9533 9.4751 13.1887 9.71054 13.1887 10.0005V13.3179C13.1887 13.6078 12.9533 13.8433 12.6633 13.8433H9.33325C9.04336 13.8432 8.80786 13.6078 8.80786 13.3179C8.80786 13.028 9.04336 12.7925 9.33325 12.7925H11.3215L8.66333 10.3892C8.4486 10.1948 8.43216 9.86295 8.62622 9.64795C8.82071 9.43315 9.15343 9.41552 9.36841 9.60986L12.1389 12.1147V10.0005C12.1389 9.71067 12.3736 9.4753 12.6633 9.4751Z" fill="currentColor"/><path d="M12.6663 2.14111C12.9562 2.14111 13.1917 2.37655 13.1917 2.6665V5.99951C13.1917 6.28946 12.9562 6.5249 12.6663 6.5249C12.3765 6.52466 12.1418 6.28931 12.1418 5.99951V3.93311L8.64185 7.43311C8.31369 7.76125 8.09151 7.98914 7.82446 8.15283C7.59858 8.29125 7.35159 8.39274 7.09399 8.45459C6.78949 8.52764 6.47197 8.5249 6.00806 8.5249H1.99731C1.70739 8.5249 1.47196 8.28943 1.47192 7.99951C1.47215 7.70976 1.70751 7.47412 1.99731 7.47412H6.00806C6.5216 7.47412 6.69331 7.47136 6.84888 7.43408C6.99932 7.39795 7.14371 7.33816 7.27563 7.25732C7.41209 7.17367 7.53625 7.05432 7.89966 6.69092L11.3987 3.19189H9.33325C9.04336 3.19183 8.80786 2.95641 8.80786 2.6665C8.80786 2.3766 9.04336 2.14118 9.33325 2.14111H12.6663Z" fill="currentColor"/>'},
+  newchat:{vb:'0 0 16 16',body:'<path d="M6.33325 1.80763C6.62314 1.80763 6.85855 2.04315 6.85864 2.33302C6.85864 2.62297 6.6232 2.85841 6.33325 2.85841H4.66626C3.66786 2.85859 2.85891 3.66765 2.85864 4.66603V11.333C2.85864 12.3316 3.66769 13.1414 4.66626 13.1416H11.3333C12.332 13.1416 13.1418 12.3317 13.1418 11.333V9.66603C13.1421 9.37642 13.3766 9.14179 13.6663 9.14161C13.956 9.14161 14.1914 9.37631 14.1917 9.66603V11.333C14.1917 12.9116 12.9119 14.1914 11.3333 14.1914H4.66626C3.0878 14.1912 1.80786 12.9115 1.80786 11.333V4.66603C1.80813 3.08775 3.08796 1.80781 4.66626 1.80763H6.33325Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M10.842 2.32228C11.6259 1.55049 12.8863 1.55435 13.6643 2.33204C14.4442 3.11205 14.4469 4.37706 13.6702 5.16017L9.41626 9.4463C9.05652 9.80879 8.59956 10.0601 8.10083 10.1699L6.19263 10.5899C5.7111 10.6958 5.28165 10.2666 5.38794 9.78517L5.80884 7.88185C5.9196 7.38036 6.17342 6.92096 6.53931 6.56056L10.842 2.32228ZM12.9221 3.07521C12.552 2.7051 11.9524 2.70322 11.5793 3.07033L7.27563 7.30861C7.05429 7.52663 6.90125 7.80504 6.83423 8.10841L6.54028 9.43849L7.87524 9.14454C8.17687 9.07807 8.45355 8.92625 8.67114 8.70704L12.9241 4.41993C13.2934 4.04741 13.2928 3.44631 12.9221 3.07521Z" fill="currentColor"/>'},
+};
+const pic=(n,s=16)=>`<svg viewBox="${PI[n].vb}" width="${s}" height="${s}" aria-hidden="true">${PI[n].body}</svg>`;
+const SEND_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg>';
+const STOP_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg>';
+
+const STEPS=[
+  {i:'read',v:'Read',t:'game.py',m:'lines 1–148',cur:'Reading game.py'},
+  {i:'search',v:'Search',t:'"direction"',m:'6 matches',cur:'Searching "direction"'},
+  {i:'edit',v:'Edit',t:'game.py',m:'+9 −2',cur:'Editing game.py'},
+  {i:'edit',v:'Edit',t:'tests/test_snake.py',m:'+18 −0',cur:'Editing tests/test_snake.py'},
+  {i:'term',v:'Ran',t:'pytest -q',m:'14 passed',cur:'Running pytest -q'},
+];
+const DIFF_GAME=[
+  ['hunk','','@@ -42,10 +42,17 @@ class Snake:'],
+  ['ctx',42,'    def turn(self, direction):'],
+  ['del',43,'        self.direction = direction'],
+  ['add',43,'        # Ignore a reversal into the snake\'s own neck.'],
+  ['add',44,'        if direction == opposite(self.last_moved):'],
+  ['add',45,'            return'],
+  ['add',46,'        self.pending = direction'],
+  ['ctx',47,''],
+  ['ctx',48,'    def step(self):'],
+  ['del',49,'        head = move(self.body[0], self.direction)'],
+  ['add',49,'        if self.pending:'],
+  ['add',50,'            self.direction = self.pending'],
+  ['add',51,'            self.pending = None'],
+  ['add',52,'        head = move(self.body[0], self.direction)'],
+  ['add',53,'        self.last_moved = self.direction'],
+  ['ctx',54,'        if head in self.body:'],
+  ['ctx',55,'            self.alive = False'],
+];
+const DIFF_TEST=[
+  ['hunk','','@@ -0,0 +1,18 @@'],
+  ['add',1,'from game import Snake, UP, LEFT, DOWN'],
+  ['add',2,''],
+  ['add',3,'def test_quick_turn_does_not_reverse():'],
+  ['add',4,'    snake = Snake(direction=UP)'],
+  ['add',5,'    snake.turn(LEFT)'],
+  ['add',6,'    snake.turn(DOWN)  # would reverse into the neck'],
+  ['add',7,'    snake.step()'],
+  ['add',8,'    assert snake.alive'],
+  ['hunk','','… 10 more lines'],
+];
+
+const NOTES={
+ 1:{t:'侧栏：状态一眼可见',p:'聊天可以并发运行，但侧栏看不出哪个在跑、哪个在等你，只能一个个点开确认。',s:'行尾状态位：转圈表示运行中，白点表示等你处理（审批或提问），绿点表示已完成未打开，同时标题变亮。悬停时换成 ⋯ 菜单。',w:'这里的 “Refactor renderer” 在后台运行，“Add high score” 已经完成但还没打开。'},
+ 2:{t:'侧栏头部与快捷入口',p:'☰ 一般表示“打开菜单”，实际作用却是收起侧栏；Ctrl K 命令面板也没有入口。',s:'改成面板图标，tooltip 显示 “Hide sidebar · Ctrl+B”。Search 行常显 Ctrl K，和 New chat 的 Ctrl N 保持一致。'},
+ 3:{t:'空白页：保持安静，沿用生产字符池塘',s:'照搬生产 character_pond.ts（12×22 网格、水波位移、--ok-dot 绿波峰、首条消息 500ms 淡出，输入框 360ms 落到底部），不加标题或额外提示条。'},
+ 4:{t:'输入框：设置收进同一个框',p:'“Choose folder · Research” 悬在框外，看起来像说明文字；Research 开没开很难看出来。',s:'底栏左侧放文件夹和 Research，右侧放模型、思考强度和发送。Research 开启时显示浅灰底，文字变亮。试着点一下。'},
+ 5:{t:'发送 / 停止：保持生产原有样式',s:'完全保留现有透明描边纸飞机（有草稿时变亮）与方形停止图标（空草稿且运行中显示），以及聚焦/悬停时的 Enter 提示，不做实心圆形按钮。'},
+ 6:{t:'模型菜单：分组 + 管理入口',p:'菜单里没有想要的模型时，不知道去哪里添加。',s:'保留绿色可用点。菜单按来源分组，底部加 “Manage models…”，直接打开 Settings → Models。'},
+ 7:{t:'快捷键提示只在聚焦/悬停时出现',s:'沿用生产 .send-hint，保持克制，不长期占用注意力。'},
+ 8:{t:'顶栏：运行状态带计时',p:'只显示 Running，不知道跑了多久，也看不出是不是卡住了。',s:'显示 “Running · 0:42”，使用等宽数字，不会跳动。'},
+ 9:{t:'过程：运行时展开，完成后收起',p:'运行中看不到进度，完成后又容易被大段过程淹没。',s:'运行时过程组默认展开，一行一行追加，当前步骤显示转圈；完成后收成一行摘要。步骤图标（读/搜/改/终端）清晰区分操作类型。'},
+ 10:{t:'运行中也能补充（Steer）',s:'占位符说明“Codey 会在下一步读到”；已发出的补充与现有设计一致，显示在输入框上方独立卡片中，支持 Edit 或 Delete。'},
+ 11:{t:'审批卡：要做什么、在哪做',p:'“Approval required” 没说明后果，卡片和过程记录又长得像，容易被滚过去。',s:'标题用问句，右侧显示工作目录；命令放进深色等宽块。Deny 在左，Allow once 是唯一的主按钮；“始终允许”和权限管理放在 ▾ 里。',w:'Enter 不会批准命令。试着点 Allow once 或 Deny。'},
+ 12:{t:'审批不在视野内时提醒',p:'往上翻阅时新审批不抢滚动，这是对的；但用户也不知道 Codey 已经停下来了。',s:'输入框上方出现胶囊，点击后滚动到审批卡。胶囊里不放批准按钮，避免误批；侧栏同时显示白点。',w:'实际只在审批卡离开视野时出现；开启标注时会强制显示。'},
+ 13:{t:'完成摘要带耗时',s:'“Worked for 1m 12s · read 1 file · …”，点击可以展开全部步骤；Ran 行还能继续展开命令输出。'},
+ 14:{t:'回答下方的改动结果行',p:'改了哪些文件、怎么查看、怎么撤销，现在都要去右侧 + 菜单里找。',s:'回答末尾显示一行“2 files changed +27 −2 · Review · Undo”。Review 打开右侧 Changes；Undo 会原地二次确认。统计数字保持灰色。'},
+ 15:{t:'消息操作：沿用现有分叉图标',s:'用户消息保留 Copy 和 Edit（不放分叉）；回答保留 Copy 和生产原有的细线分叉箭头图标（frontend/src/message_icons.ts）。悬停显示，带 tooltip。'},
+ 16:{t:'顶栏的改动入口',s:'有未审阅改动时，顶栏显示 “2 changed +27 −2”，点击打开右侧 Changes；没有改动时不占位置。'},
+ 17:{t:'右侧工作区：常用标签可见，且均可关闭',p:'原来所有标签都藏在 + 菜单里；但如果锁死不能关，又会让习惯极简的用户觉得拥挤。',s:'默认打开 Changes / Files / Research 并带计数，但每个标签悬停/激活时都有 × 可单独关闭，点 + 可随时重开或添加 Local context / Review / Output / History；最右侧 × 关闭整个工作区。试着点标签上的 × 或 +。'},
+ 18:{t:'Diff：文件列表 + 原地展开',s:'每一行显示状态字母、路径和 +/− 统计，点击即可展开 diff。“Restore all” 会原地变成二次确认。'},
+ 19:{t:'可拖动调整宽度',s:'左侧 6px 是拖动热区，悬停时出现 1px 灰线，双击恢复默认宽度。各聊天分别记住宽度和打开的标签。'},
+ 20:{t:'设置：开关和计数更易读',p:'字号滑块的三个档位不直观；来源总开关和选择数量的关系也不清楚。',s:'字号改成三段分段控件。每个来源一行，显示 “5 of 5 models” 和标准开关；没有选择模型时开关禁用，展开后是复选框列表。'},
+ 21:{t:'只有改动时才能保存',s:'没有改动时显示 “No changes”，Save 禁用；有改动时显示 “2 unsaved changes”。试着切换开关或勾选模型。'},
+ 22:{t:'左右侧栏开关 + 统一 tooltip',s:'左右侧栏使用对称的面板开关图标，悬停 450ms 后显示“名称 + 快捷键”（Ctrl+B / Ctrl+J）。'},
+ 23:{t:'Research 四标签结构完整保留',s:'Evidence（立场+原文摘录+反证）、Sources（Cited / Opened only）、Graph（关系图）和 Notes（综合与笔记）。点击切换四个子标签，点击对话里的 [1] [2] 可直接跳到来源。'},
+ 24:{t:'Graph 深度与重置',s:'保留生产 Depth 1 / 2 / 3 切换与 Reset：Depth 1 聚焦核心综合与笔记，Depth 2 展开引用的来源节点，Depth 3 扩展外围概念与参考文档。点 1 / 2 / 3 立即生效。'},
+ 25:{t:'生产同款力导向关系图（Canvas）',s:'逐行移植自 research_graph.ts：节点保持 --ok-dot 绿色，边在静息态为灰色（反证边为虚线带箭头）；悬停节点高亮相邻绿边、淡化无关节点；支持拖节点、拖画布、滚轮缩放、单击查看底部详情与双击打开对应笔记。'},
+};
+const STATE_NOTES={empty:[3,4,5,6,2,22,1],running:[8,9,10,1],approval:[11,12,1],done:[13,14,15,16],workspace:[17,18,19],research:[23,24,25,17],settings:[20,21]};
+</script>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const app=$('#app'), stage=$('#stage'), main=$('#main'), chatArea=$('#chatArea'), ta=$('#ta');
+const S={state:'empty',research:false,model:'DeepSeek',effort:'High',folder:'snake-game',notes:true,
+  procOpen:null,cmdOpen:false,phase:null,runStep:3,flow:false,userText:'Fix the snake collision bug — it dies when I turn quickly.',
+  pending:[],timers:[],t0:Date.now()-38000,undoAsk:false,undone:false,restoreAsk:false,
+  wsTabs:['changes','files','research'],wsTab:'changes',rsTab:'graph',rsDepth:2,rsFocusNote:'',rsExpanded:{},
+  open:{'game.py':true,'tests/test_snake.py':false},font:'Standard',
+  srcOpen:{web:true,local:false,zen:false}};
+const WS_PANELS=[
+  {id:'changes',label:'Changes'},{id:'files',label:'Files'},{id:'research',label:'Research'},
+  {id:'context',label:'Local context'},{id:'review',label:'Review'},{id:'output',label:'Output'},{id:'history',label:'History'},
+];
+const RS_RUN={
+  subtitle:'4 notes · 5 sources',
+  evidence:[
+    {stance:'supports',claim:'Fixed-timestep accumulator decouples physics ticks from variable frame rates',host:'gafferongames.com',url:'https://gafferongames.com/post/fix_your_timestep/',locator:'§ Free the physics',note_id:'n-timestep',
+     excerpt:'“The renderer produces time and the simulation consumes it in discrete dt sized steps, preventing tunneling or input reversals on frame spikes.”'},
+    {stance:'supports',claim:'Buffering one pending direction and checking opposite(last_moved) prevents 180° neck reversals',host:'pygame.org',url:'https://www.pygame.org/docs/ref/event.html',locator:'event queue · poll()',note_id:'n-input',
+     excerpt:'Multiple KEYDOWN events can arrive before the next grid step; validating against the last committed move direction avoids self-collision.'},
+    {stance:'contradicts',claim:'Using variable dt directly for grid-based Snake causes skipped cells under GC pauses',host:'gameprogrammingpatterns.com',url:'https://gameprogrammingpatterns.com/game-loop.html',locator:'ch.9 · Game Loop',note_id:'n-counter',
+     excerpt:'Variable delta time works well for continuous kinematics, but discrete grid games become non-deterministic when dt exceeds one cell step.'},
+    {stance:'context',claim:'Input queue depth > 2 feels sluggish on fast turns compared to a 1-slot overwrite buffer',host:'gamedev.stackexchange.com',url:'https://gamedev.stackexchange.com/questions/snake-input-buffer',locator:'accepted answer',note_id:'n-input',
+     excerpt:'A single pending slot (or 2-slot FIFO) balances responsiveness with preventing stale turns from firing late.'},
+  ],
+  counterpoints:[
+    'Variable-dt interpolation still helps visual smoothness between grid ticks, even when logic stays fixed-step.',
+    'A 2-slot FIFO queue handles fast U-turns better than 1-slot overwrite if the player intentionally queues Left → Down.',
+  ],
+  coverage:['fixed timestep input buffer grid game','snake game reverse into self two keys one tick','pygame event queue multiple keydown per frame'],
+  cited:[
+    {number:1,title:'Fix Your Timestep!',host:'gafferongames.com',url:'https://gafferongames.com/post/fix_your_timestep/',quality:'Primary · technical article · 2024',retrieved:'2026-11-25 14:12'},
+    {number:2,title:'Game Loop — Game Programming Patterns',host:'gameprogrammingpatterns.com',url:'https://gameprogrammingpatterns.com/game-loop.html',quality:'Primary · book chapter · canonical',retrieved:'2026-11-25 14:12'},
+    {number:3,title:'pygame.event — Event Queue Reference',host:'pygame.org',url:'https://www.pygame.org/docs/ref/event.html',quality:'Official docs · API reference',retrieved:'2026-11-25 14:13'},
+    {number:4,title:'Handling rapid directional input in grid Snake',host:'gamedev.stackexchange.com',url:'https://gamedev.stackexchange.com/questions/snake-input-buffer',quality:'Community · verified answer',retrieved:'2026-11-25 14:13'},
+  ],
+  openedOnly:[
+    {title:'Python time.perf_counter monotonic guarantees',host:'docs.python.org',url:'https://docs.python.org/3/library/time.html',quality:'Official docs · opened for verification',retrieved:'2026-11-25 14:14'},
+  ],
+  notes:{
+    'n-synth':{title:'Input buffering & fixed tick for Snake',type:'synthesis',updated:'14:14',path:'notes/snake-input-synthesis.md',
+      body:'Combine a discrete fixed tick with a committed `last_moved` direction guard.\n\n1. Never validate a new turn against the unapplied `self.direction`; compare against `self.last_moved`.\n2. Keep a 1-slot `pending` buffer (or 2-slot FIFO if rapid U-turns are desired).\n3. Keep rendering interpolation separate from logical grid ticks.',
+      sources:[1,2,3,4]},
+    'n-timestep':{title:'Fixed-timestep accumulator pattern',type:'note',updated:'14:13',path:'notes/fixed-timestep.md',
+      body:'Accumulate elapsed wall time and consume fixed `dt` slices. Clamp max frame delta to avoid spiral-of-death when the window loses focus.',
+      sources:[1,2]},
+    'n-input':{title:'Direction guard against same-tick reversal',type:'note',updated:'14:13',path:'notes/direction-guard.md',
+      body:'When Left and Down arrive inside one tick while moving Up, naive mutation sets `direction=LEFT` then `direction=DOWN` (opposite of UP) before `step()` runs. Checking `opposite(self.last_moved)` eliminates the bug.',
+      sources:[3,4]},
+    'n-counter':{title:'Counterpoint: 2-slot FIFO vs 1-slot pending',type:'counterpoint',updated:'14:14',path:'notes/fifo-tradeoff.md',
+      body:'A 1-slot buffer drops the first key if a player presses Left then Down very quickly to make a tight U-turn. A bounded 2-slot queue preserves both turns while validating each entry against the prior queued direction.',
+      sources:[4]},
+  },
+  graphNodes:[
+    {id:'c-loop',kind:'concept',label:'Game loop & input',weight:3.2,depth:1,excerpt:'Core design space: deterministic tick scheduling and rapid directional input handling.'},
+    {id:'n-synth',kind:'synthesis',label:'Input buffering synthesis',weight:4.0,focus:true,depth:1,path:'notes/snake-input-synthesis.md',excerpt:'Validate turns against last_moved and buffer pending direction until the next fixed tick.'},
+    {id:'n-input',kind:'note',label:'Direction guard',weight:2.8,depth:1,path:'notes/direction-guard.md',excerpt:'Prevents 180° self-collision when two keys fire within one tick.'},
+    {id:'n-timestep',kind:'note',label:'Fixed-timestep tick',weight:2.7,depth:1,path:'notes/fixed-timestep.md',excerpt:'Discrete dt accumulator keeps grid movement deterministic.'},
+    {id:'n-counter',kind:'counterpoint',label:'2-slot FIFO tradeoff',weight:2.4,depth:1,path:'notes/fifo-tradeoff.md',excerpt:'Counterpoint: 1-slot overwrite drops intentional fast U-turns; 2-slot FIFO keeps them.'},
+    {id:'s-1',kind:'source_url',label:'gafferongames.com',weight:1.8,depth:2,url:'https://gafferongames.com/post/fix_your_timestep/',excerpt:'Fix Your Timestep! — discrete dt consumption.'},
+    {id:'s-2',kind:'source_url',label:'gameprogrammingpatterns',weight:1.7,depth:2,url:'https://gameprogrammingpatterns.com/game-loop.html',excerpt:'Game Loop chapter — fixed update vs variable render.'},
+    {id:'s-3',kind:'source_url',label:'pygame.org/event',weight:1.6,depth:2,url:'https://www.pygame.org/docs/ref/event.html',excerpt:'Multiple KEYDOWN events per tick in poll() queue.'},
+    {id:'s-4',kind:'source_url',label:'gamedev.stackexchange',weight:1.5,depth:2,url:'https://gamedev.stackexchange.com/questions/snake-input-buffer',excerpt:'Input buffer depth comparison for grid Snake.'},
+    {id:'c-det',kind:'concept',label:'Determinism',weight:2.1,depth:3,excerpt:'Reproducible physics & regression tests independent of host FPS.'},
+    {id:'s-5',kind:'source_url',label:'docs.python.org/time',weight:1.2,depth:3,url:'https://docs.python.org/3/library/time.html',excerpt:'Monotonic clock via time.perf_counter().'},
+  ],
+  graphEdges:[
+    {src:'c-loop',dst:'n-synth',kind:'relates',detail:'Synthesizes input guard + tick model'},
+    {src:'n-synth',dst:'n-input',kind:'supports',detail:'Core fix for same-tick reversal'},
+    {src:'n-synth',dst:'n-timestep',kind:'supports',detail:'Keeps step boundary predictable'},
+    {src:'n-counter',dst:'n-input',kind:'contradicts',detail:'1-slot overwrite drops intentional U-turn'},
+    {src:'n-counter',dst:'n-synth',kind:'contradicts',detail:'Alternative: bounded 2-slot FIFO queue'},
+    {src:'n-timestep',dst:'s-1',kind:'cites'},
+    {src:'n-timestep',dst:'s-2',kind:'cites'},
+    {src:'n-input',dst:'s-3',kind:'cites'},
+    {src:'n-input',dst:'s-4',kind:'cites'},
+    {src:'n-counter',dst:'s-4',kind:'cites'},
+    {src:'c-det',dst:'n-timestep',kind:'relates',detail:'Fixed dt enables deterministic tests'},
+    {src:'n-timestep',dst:'s-5',kind:'cites'},
+  ],
+};
+const SOURCES=[
+  {id:'web',name:'Websites',models:['DeepSeek','Qwen','GLM','MiMo','StepFun']},
+  {id:'local',name:'Local',models:['gemma-3-12b-it','qwen2.5-coder-14b']},
+  {id:'zen',name:'OpenCode Zen',models:['muse-coder','space-bunny','zen-mini','zen-large']},
+];
+const BASE_SEL={web:['DeepSeek','Qwen','GLM','MiMo','StepFun'],local:['gemma-3-12b-it'],zen:[]};
+const BASE_ON={web:true,local:true,zen:false};
+let SEL=JSON.parse(JSON.stringify(BASE_SEL)), ON={...BASE_ON};
+
+const base=()=>['workspace','settings','research'].includes(S.state)?'done':S.state;
+const isRunning=()=>['running','approval'].includes(base());
+const later=(fn,ms)=>S.timers.push(setTimeout(fn,ms));
+const clearTimers=()=>{S.timers.forEach(clearTimeout);S.timers=[]};
+const fmt=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+
+/* ---------- 侧栏 ---------- */
+function chatRow(title,o={}){
+  const st=o.st==='run'?`<span class="spin" data-tip="Running"></span>`:o.st==='attn'?`<span class="st-dot attn" data-tip="Needs your approval"></span>`:o.st==='unread'?`<span class="st-dot unread" data-tip="Finished · not opened yet"></span>`:'';
+  return `<div class="chat${o.in?' in':''}${o.active?' active':''}${o.st==='unread'?' fresh':''}"><span class="t">${title}</span><span class="st"${o.note?` data-note="${o.note}"`:''}>${st}</span><button class="ib sm more" data-tip="More">${ic('more',14)}</button></div>`;
+}
+function sidebarHTML(){
+  const b=base();
+  const activeSt=b==='running'?'run':b==='approval'?'attn':'';
+  const title=b==='empty'?'New chat':'Fix collision bug';
+  return `<div class="sb-in">
+  <div class="sb-head"><button class="ib" data-act="toggle-sb" data-tip="Hide sidebar" data-kbd="Ctrl+B" data-note="2">${ic('panel')}</button></div>
+  <div class="sb-actions">
+    <button class="sb-row" data-act="new-chat"><span style="display:grid;width:15px">${pic('newchat',16)}</span><span>New chat</span><span class="kbd">Ctrl N</span></button>
+    <button class="sb-row" data-tip="Search chats, projects and commands">${ic('search',15)}<span>Search</span><span class="kbd">Ctrl K</span></button>
+  </div>
+  <div class="sb-list">
+    <div class="grp">Projects<button class="ib sm" data-tip="Add project">${ic('plus',14)}</button></div>
+    <div class="proj has-active"><span class="muted" style="display:grid">${ic('chevD',12)}</span><span class="nm" title="E:\\snake-game">snake-game</span><button class="ib sm" data-tip="New chat in snake-game">${pic('newchat',15)}</button><button class="ib sm" data-tip="More">${ic('more',14)}</button></div>
+    ${chatRow(title,{in:1,active:1,st:activeSt})}
+    ${chatRow('Add high score',{in:1,st:'unread'})}
+    ${chatRow('Refactor renderer',{in:1,st:'run',note:1})}
+    <div class="proj"><span class="muted" style="display:grid">${ic('chevR',12)}</span><span class="nm">blog-site</span></div>
+    <div class="grp">Chats<button class="ib sm" data-tip="New chat" data-kbd="Ctrl+N">${pic('newchat',15)}</button></div>
+    ${chatRow('Explain asyncio.gather')}
+    ${chatRow('Regex for email validation')}
+  </div>
+  <div class="sb-foot"><button class="sb-row" data-act="settings">${ic('gear',15)}<span>Settings</span><span class="kbd">Ctrl ,</span></button></div>
+  </div>`;
+}
+
+/* ---------- 顶栏 ---------- */
+function topHTML(){
+  const b=base(); const title=b==='empty'?'New chat':(S.state==='research'?'Snake input loop research':'Fix collision bug');
+  let status='';
+  if(b==='running') status=`<span class="top-status" data-note="8"><span class="spin"></span>Running · <span class="elapsed">0:38</span></span>`;
+  if(b==='approval') status=`<span class="top-status"><span class="st-dot attn"></span>Waiting for approval</span>`;
+  if(b==='done'&&!S.undone&&S.state!=='research') status=`<button class="top-chg" data-act="review" data-note="16" data-tip="Review changes">${ic('file',14)}2 changed <span class="mono muted">+27 −2</span></button>`;
+  return `<button class="ib sb-show" data-act="toggle-sb" data-tip="Show sidebar" data-kbd="Ctrl+B">${ic('panel')}</button>
+  <div class="crumb"><span class="p">snake-game</span><span class="sep">/</span><span class="c" data-tip="Click to rename">${title}</span></div>
+  ${status}
+  <button class="ib" data-act="ws" data-tip="Workspace" data-kbd="Ctrl+J" data-note="22">${ic('layout')}</button>`;
+}
+
+/* ---------- 对话 ---------- */
+function stepHTML(s,o={}){
+  const icon=o.cur?'<span class="spin"></span>':ic(s.i,14);
+  const isCmd=s.i==='term'&&!o.cur&&!o.wait;
+  const meta=o.cur?'…':o.wait?'needs approval':s.m;
+  return `<div class="step${o.cur?' cur':''}${o.wait?' wait':''}${isCmd?' cmd':''}"${isCmd?' data-act="cmd"':''}><span class="si">${icon}</span><span class="v">${s.v}</span><span class="tg">${s.t}</span><span class="m">${meta}${isCmd?ic(S.cmdOpen?'chevD':'chevR',12):''}</span></div>`+
+   (isCmd&&S.cmdOpen?`<div class="shell"><div class="cmdl"><span class="muted">$ </span>pytest -q</div><pre>..............                                   [100%]
+14 passed in 0.42s</pre><div class="ex">exit 0 · 0.6s</div></div>`:'');
+}
+function procHTML(){
+  const b=base(); let head,steps,def,note;
+  if(b==='running'){
+    const n=S.phase==='test'?4:S.runStep;
+    head=`<span class="spin"></span><b>Working</b><span class="dim">· ${STEPS[n].cur} · <span class="elapsed">0:38</span></span>`;
+    steps=STEPS.slice(0,n).map(s=>stepHTML(s)).join('')+stepHTML(STEPS[n],{cur:1});
+    def=true; note=9;
+  }else if(b==='approval'){
+    head=`<span class="chev">${ic('chevR',12)}</span><b>Waiting for approval</b><span class="dim">· pytest -q</span>`;
+    steps=STEPS.slice(0,4).map(s=>stepHTML(s)).join('')+stepHTML(STEPS[4],{wait:1});
+    def=true;
+  }else{
+    head=`<span class="chev">${ic('chevR',12)}</span><b>Worked for 1m 12s</b><span class="dim">· read 1 file · searched 1 · edited 2 files · ran 1 command</span>`;
+    steps=STEPS.map(s=>stepHTML(s)).join(''); def=false; note=13;
+  }
+  const open=S.procOpen??def;
+  if(b==='running') head=`<span class="chev" style="display:none"></span>`+head;
+  return `<div class="proc${open?' open':''}"><button class="proc-h" data-act="proc"${note?` data-note="${note}"`:''}>${head}</button><div class="steps">${steps}</div></div>`;
+}
+function resultHTML(){
+  if(S.undone) return `<div class="result">${ic('undo',14)}<span>Changes to 2 files were undone. The files match the state before this turn.</span></div>`;
+  if(S.undoAsk) return `<div class="result"><span class="txt">Undo changes to 2 files?</span><span class="muted" style="font-size:12px">Restores them to before this turn.</span><span class="spacer"></span><button class="lk" data-act="undo-cancel">Cancel</button><button class="btn sm primary" data-act="undo-yes">Undo changes</button></div>`;
+  return `<div class="result" data-note="14">${ic('file',14)}<span class="txt">2 files changed</span><span class="mono muted" style="font-size:11.5px">+27 −2</span><span class="files">game.py, tests/test_snake.py</span><span class="spacer"></span><button class="lk" data-act="review">Review</button><button class="lk" data-act="undo">Undo</button></div>`;
+}
+function chatHTML(){
+  const b=base(); if(b==='empty') return '';
+  if(S.state==='research'){
+    return `<div class="msg u"><div class="b">Research best practices for fixed-timestep loops and rapid directional input in grid-based Snake games.</div><div class="acts"><button class="ib" data-tip="Copy">${pic('copy',15)}</button><button class="ib" data-tip="Edit">${pic('edit',15)}</button></div></div>
+    <div class="proc"><button class="proc-h" data-act="proc"><span class="chev">${ic('chevR',12)}</span><b>Researched for 48s</b><span class="dim">· searched 3 queries · opened 5 sources · wrote 4 notes</span></button>
+      <div class="steps">${[
+        {i:'search',v:'Search',t:'"fixed timestep input buffer grid game"',m:'8 results'},
+        {i:'read',v:'Opened',t:'gafferongames.com/post/fix_your_timestep/',m:'§ Free the physics'},
+        {i:'read',v:'Opened',t:'gameprogrammingpatterns.com/game-loop.html',m:'ch.9'},
+        {i:'read',v:'Opened',t:'pygame.org/docs/ref/event.html',m:'event queue'},
+        {i:'edit',v:'Wrote',t:'notes/snake-input-synthesis.md',m:'4 notes'},
+      ].map(s=>stepHTML(s)).join('')}</div></div>
+    <div class="msg"><div class="a">
+      <p>For a grid-based Snake game, combine a <b>fixed-timestep accumulator</b> <span class="cite" data-act="rs-tab" data-v="sources" data-tip="View source [1]">[1]</span><span class="cite" data-act="rs-tab" data-v="sources" data-tip="View source [2]">[2]</span> with a directional guard validated against the last <em>committed</em> move rather than the unapplied pending direction <span class="cite" data-act="rs-tab" data-v="sources" data-tip="View source [3]">[3]</span>.</p>
+      <p><b>Tradeoff to note:</b> a single overwrite slot prevents self-reversal, while a bounded 2-slot FIFO queue preserves intentional rapid U-turns (Left → Down within one tick) <span class="cite" data-act="rs-tab" data-v="sources" data-tip="View source [4]">[4]</span>. See the <b>Graph</b> tab for how these sources and counterpoints connect.</p>
+    </div>
+    <div class="result">${ic('globe',14)}<span class="txt">Research report</span><span class="mono muted" style="font-size:11.5px">4 notes · 5 sources</span><span class="spacer"></span><button class="lk" data-act="rs-tab" data-v="evidence">Evidence</button><button class="lk" data-act="rs-tab" data-v="graph">Graph</button></div>
+    <div class="acts"><button class="ib" data-tip="Copy">${pic('copy',15)}</button><button class="ib" data-tip="Fork from here">${pic('branch',15)}</button></div></div>`;
+  }
+  const user=`<div class="msg u"><div class="b">${S.userText.replace(/</g,'&lt;')}</div><div class="acts"><button class="ib" data-tip="Copy">${pic('copy',15)}</button><button class="ib" data-tip="Edit">${pic('edit',15)}</button></div></div>`;
+  let h=user+procHTML();
+  if(b==='approval') h+=`<div class="appr" id="appr" data-note="11"><div class="appr-h">${ic('term')}Run this command?<span class="cwd">E:\\snake-game</span></div>
+    <div class="appr-cmd"><span class="ps">$</span>pytest -q</div>
+    <div class="appr-f"><span class="hint">Codey pauses until you decide.</span><button class="btn" data-act="deny">Deny</button><span class="split"><button class="btn primary" data-act="allow">Allow once</button><button class="btn primary caret" data-act="menu-allow" data-tip="More allow options">${ic('chevD',12)}</button></span></div></div>`;
+  if(b==='done'){
+    const denied=S.denied;
+    h+=`<div class="msg"><div class="a">${denied?`<p>I fixed the reversal bug in <code>game.py</code> and added a regression test, but I did <b>not</b> run it because you denied <code>pytest -q</code>. Run it yourself when convenient.</p>`:
+    `<p>The snake died because two quick key presses within one tick could reverse it into its own neck. <code>turn()</code> now buffers the next direction and ignores a reversal relative to the last <em>moved</em> direction, not the last requested one.</p>
+    <pre><span class="lang">python</span>if direction == opposite(self.last_moved):
+    return
+self.pending = direction</pre>
+    <p>I added a regression test that sends <code>Left</code> then <code>Down</code> within one tick. <code>pytest -q</code> passes (14 tests).</p>`}</div>
+    ${resultHTML()}
+    <div class="acts"><button class="ib" data-tip="Copy" data-note="15">${pic('copy',15)}</button><button class="ib" data-tip="Fork from here">${pic('branch',15)}</button></div></div>`;
+  }
+  return h;
+}
+
+/* ---------- 输入框 ---------- */
+function updateComposer(){
+  const b=base(), run=isRunning();
+  main.classList.toggle('empty',b==='empty');
+  ta.placeholder=run?'Add a note for Codey — it reads it at the next step':'Ask Codey to build, fix, or explain…';
+  const pend=$('#pending');
+  const items=[...S.pending]; if(b==='running'&&!items.length&&!S.flow) items.push('Keep the speed setting unchanged');
+  pend.hidden=!(run&&items.length);
+  pend.innerHTML=items.map((t,i)=>`<div class="pend"${i===0?' data-note="10"':''}><span class="lab">Next step</span><span class="tx">${t.replace(/</g,'&lt;')}</span><button class="lk" data-tip="Edit this note">Edit</button><button class="lk" data-act="pend-del" data-i="${i}">Delete</button></div>`).join('');
+  if(!pend.hidden) S.pendingShown=items;
+  $('#bar').innerHTML=`
+    <button class="chip" data-act="menu-folder" data-tip="Working folder · E:\\snake-game" data-note="4">${ic('folder',14)}<span class="lb">${S.folder||'Choose folder'}</span><span class="cv">${ic('chevD',12)}</span></button>
+    <button class="chip${S.research?' on':''}" data-act="research" aria-pressed="${S.research}" data-tip="${S.research?'Research is on · answers cite opened sources':'Turn on Research for cited answers'}">${ic('globe',14)}Research</button>
+    <span class="spacer"></span>
+    <button class="chip" data-act="menu-model" data-tip="Choose model" data-note="6"><span class="dot"></span><span class="lb">${S.model}</span><span class="cv">${ic('chevD',12)}</span></button>
+    <button class="chip" data-act="menu-effort" data-tip="Thinking effort">${S.effort}<span class="cv">${ic('chevD',12)}</span></button>
+    <span class="send-hint">Enter</span>
+    <div class="action-slot" data-note="5"><button class="icon-btn send" id="send" data-act="send"></button></div>`;
+  updateSend();
+  const j=$('#jump'); j.classList.toggle('avail',b==='approval'); $('#jumpIc').innerHTML=ic('arrowD',13);
+  if(b!=='approval') j.classList.remove('show');
+}
+function updateSend(){
+  /* 生产规则：有草稿显示 Send；空草稿且本聊天在运行时显示 Stop；否则禁用 Send。同一 34px 位置，从不同时出现。 */
+  const btn=$('#send'); if(!btn) return;
+  const has=ta.value.trim().length>0;
+  if(has){btn.className='icon-btn send';btn.disabled=false;btn.innerHTML=SEND_SVG;btn.dataset.tip=isRunning()?'Send note to Codey':'Send';btn.dataset.kbd='Enter';}
+  else if(isRunning()){btn.className='icon-btn';btn.disabled=false;btn.innerHTML=STOP_SVG;btn.dataset.tip='Stop';btn.dataset.kbd='';}
+  else{btn.className='icon-btn send';btn.disabled=true;btn.innerHTML=SEND_SVG;btn.dataset.tip='';btn.dataset.kbd='';}
+}
+function placeComposer(){ /* 位置由 CSS .main.empty .cw 的 margin-bottom 过渡控制，与生产一致 */ }
+</script>
+
+<script>
+/* ---------- 右侧工作区 ---------- */
+function diffHTML(rows){return `<div class="diff">${rows.map(([k,n,t])=>`<div class="dl ${k}"><span class="ln">${n}</span><span class="mk">${k==='add'?'+':k==='del'?'−':''}</span><span>${t.replace(/</g,'&lt;')}</span></div>`).join('')}</div>`}
+function fileRow(path,st,stat,rows,note){
+  const open=S.open[path]; const i=path.lastIndexOf('/');
+  const p=i>=0?`<span class="dir">${path.slice(0,i+1)}</span>${path.slice(i+1)}`:path;
+  return `<div class="f-row${open?' open':''}" data-act="file" data-p="${path}"${note?` data-note="${note}"`:''}><span class="cv">${ic('chevR',12)}</span><span class="f-st" data-tip="${st==='M'?'Modified':'Added'}">${st}</span><span class="f-path">${p}</span><span class="f-stat">${stat}</span></div>${open?diffHTML(rows):''}`;
+}
+function renderWs(){
+  const n=S.undone?0:2;
+  let body='';
+  if(!S.wsTabs.length){
+    body=`<div class="ws-none">No panels open<div style="margin-top:12px">${WS_PANELS.map(p=>`<button class="btn sm" data-act="ws-add" data-v="${p.id}">${p.label}</button>`).join('')}</div></div>`;
+  }else if(S.wsTab==='changes'){
+    const sub=S.restoreAsk
+      ?`<span style="color:var(--text)">Restore 2 files to before this chat?</span><span class="spacer"></span><button class="lk" data-act="restore-cancel">Cancel</button><button class="btn sm primary" data-act="restore-yes">Restore</button>`
+      :`<span>Working tree</span><span class="faint">·</span><span>snake-game</span><span class="spacer"></span><button class="lk" data-tip="Copy diff">Copy</button><button class="lk">Refresh</button><button class="lk" data-act="restore"${n?'':' disabled style="opacity:.4"'}>Restore all</button>`;
+    body=`<div class="ws-sub">${sub}</div>`+(n
+      ?fileRow('game.py','M','+9 −2',DIFF_GAME,18)+fileRow('tests/test_snake.py','A','+18 −0',DIFF_TEST)
+      :`<div class="ws-empty"><b>No changes</b>Files in snake-game match the last snapshot.</div>`);
+  }else if(S.wsTab==='files'){
+    const tr=(d,name,s,isDir)=>`<div class="tr" style="padding-left:${8+d*14}px">${isDir?`<span class="muted" style="display:grid">${ic('chevD',12)}</span>`:`<span style="width:12px"></span>`}${name}${s?`<span class="s">${s}</span>`:''}</div>`;
+    body=`<div class="tree">${tr(0,'snake-game',0,1)}${tr(1,'tests',0,1)}${tr(2,'test_snake.py',n?'A':'')}${tr(1,'game.py',n?'M':'')}${tr(1,'renderer.py')}${tr(1,'config.toml')}${tr(1,'README.md')}</div>`;
+  }else if(S.wsTab==='research'){
+    body=researchBodyHTML();
+  }else{
+    const p=WS_PANELS.find(x=>x.id===S.wsTab);
+    body=`<div class="ws-empty"><b>${p?p.label:''}</b>Same panel as today; content unchanged in this proposal.</div>`;
+  }
+  const tabs=S.wsTabs.map(id=>{const p=WS_PANELS.find(x=>x.id===id); const cnt=id==='changes'&&n?`<span class="n">${n}</span>`:id==='research'&&S.state==='research'?`<span class="n">6</span>`:'';
+    return `<span class="wtab${S.wsTab===id?' on':''}"><button class="tab${S.wsTab===id?' on':''}" data-act="tab" data-v="${id}">${p.label}${cnt}</button><button class="tab-x" data-act="tab-close" data-v="${id}" data-tip="Close ${p.label}">${ic('x',12)}</button></span>`}).join('');
+  $('#ws').innerHTML=`<div class="ws-resize" data-tip="Drag to resize · double-click to reset" data-note="19"></div>
+  <div class="ws-h"><span style="display:flex;gap:2px;min-width:0;overflow:hidden" data-note="17">${tabs}</span>
+    <button class="ib" data-act="menu-wsadd" data-tip="Open panel">${ic('plus',14)}</button>
+    <span class="spacer"></span>
+    <button class="ib" data-act="ws" data-tip="Close workspace" data-kbd="Ctrl+J">${ic('x',14)}</button></div>
+  <div class="ws-b">${body}</div>`;
+  if(S.wsTab==='research'&&S.rsTab==='graph'&&S.wsTabs.includes('research')&&S.state==='research') mountGraph();
+  else stopGraph();
+}
+
+/* ---------- Research 面板（Evidence / Sources / Graph / Notes，照搬生产 research_drawer.ts + research_graph.ts） ---------- */
+function researchBodyHTML(){
+  const hasRun=S.state==='research';
+  if(!hasRun){
+    return S.research
+      ?`<div class="ws-empty"><b>Research is on</b>Sources Codey opens in the next answer will appear here with Evidence, Sources, Graph and Notes.<div style="margin-top:12px"><button class="btn sm" data-act="go-research">Preview a Research run</button></div></div>`
+      :`<div class="ws-empty"><b>No research in this chat</b>Turn on Research to collect sources, build a relationship graph and cite them in answers.<div style="margin-top:12px;display:flex;gap:8px;justify-content:center"><button class="btn sm" data-act="research">${ic('globe',14)}Turn on Research</button><button class="btn sm" data-act="go-research">Preview example</button></div></div>`;
+  }
+  const tabs=[['evidence','Evidence'],['sources','Sources'],['graph','Graph'],['notes','Notes']];
+  let panel='';
+  if(S.rsTab==='evidence'){
+    const stanceLabel={supports:'Supports',contradicts:'Contradicts',context:'Context'};
+    panel=RS_RUN.evidence.map(it=>`<div class="research-card"><div class="research-card-head"><span class="research-stance">${stanceLabel[it.stance]||it.stance}</span><div class="research-card-title">${it.claim}</div></div>
+      <div class="research-card-meta"><a class="research-source-link" href="${it.url}" target="_blank" rel="noopener noreferrer">${it.host}</a> · ${it.locator} · <button class="lk" style="padding:0;font:inherit" data-act="rs-opennote" data-v="${it.note_id}">note ${it.note_id}</button></div>
+      <blockquote class="research-quote">${it.excerpt}</blockquote></div>`).join('')+
+      `<div class="research-card"><div class="research-card-head"><div class="research-card-title">Counter-evidence / limitations</div></div><ul class="research-list">${RS_RUN.counterpoints.map(c=>`<li>${c}</li>`).join('')}</ul></div>`+
+      `<div class="research-card"><div class="research-card-head"><div class="research-card-title">Search coverage</div></div><ul class="research-list">${RS_RUN.coverage.map(q=>`<li>query: ${q}</li>`).join('')}</ul></div>`;
+  }else if(S.rsTab==='sources'){
+    const card=s=>`<div class="research-card"><div class="research-card-head"><div class="research-card-title"><a class="research-source-link" href="${s.url}" target="_blank" rel="noopener noreferrer">${s.number?`[${s.number}] `:''}${s.title}</a></div><button class="ib sm" data-tip="Copy citation">${pic('copy',14)}</button></div>
+      <div class="research-card-meta">${s.host}</div><div class="research-card-meta">${s.quality} · ${s.retrieved}</div></div>`;
+    panel=`<section class="research-source-section"><h3>Cited in report</h3>${RS_RUN.cited.map(card).join('')}</section>`+
+          `<section class="research-source-section"><h3>Opened only</h3>${RS_RUN.openedOnly.map(card).join('')}</section>`;
+  }else if(S.rsTab==='graph'){
+    panel=`<div class="research-graph-toolbar" data-note="24"><span>Depth</span>${[1,2,3].map(d=>`<button class="research-depth${S.rsDepth===d?' active':''}" data-act="rs-depth" data-v="${d}">${d}</button>`).join('')}<span class="spacer"></span><button class="drawer-btn" data-act="rs-reset">Reset</button></div>
+      <div class="research-graph-stage" data-note="25"><canvas id="rsGraphCanvas"></canvas><div class="research-graph-legend"><span><i></i>supports / cites</span><span><i class="dash"></i>contradicts</span><span>drag · pan · wheel zoom</span></div></div>
+      <div class="research-graph-detail" id="rsGraphDetail"><div class="research-graph-detail-meta">Select a node or edge · double-click to open</div></div>`;
+  }else{
+    const groups=[
+      ...(S.rsFocusNote&&RS_RUN.notes[S.rsFocusNote]?[['Selected note',[S.rsFocusNote]]]:[]),
+      ['Synthesis',['n-synth']],
+      ['Created notes',['n-input','n-timestep','n-counter']],
+    ];
+    const noteCard=id=>{const n=RS_RUN.notes[id]; if(!n) return '';
+      return `<div class="research-card"><div class="research-card-head"><div class="research-card-title">${n.title}</div><button class="drawer-btn" data-act="noop">Open document</button></div>
+        <div class="research-card-meta">${n.type} · ${n.updated} · ${n.path}</div>
+        <div class="research-note-body">${n.body.split('\n\n').map(p=>`<p>${p.replace(/`([^`]+)`/g,'<code>$1</code>')}</p>`).join('')}</div>
+        <div class="research-source-chips"><span>Sources</span>${n.sources.map(num=>`<button class="research-source-chip" data-act="rs-tab" data-v="sources">[${num}]</button>`).join('')}</div></div>`;};
+    panel=groups.map(([title,ids])=>`<div><div class="research-note-section-head"><span class="research-note-count">${ids.length}</span><span class="research-note-heading">${title}</span></div>${ids.map(noteCard).join('')}</div>`).join('');
+  }
+  return `<div class="rs-wrap">
+    <div class="rs-head"><strong>Research</strong><span>${RS_RUN.subtitle}</span><span class="spacer"></span><button class="drawer-btn" data-act="noop">Use in Project</button><button class="drawer-btn" data-act="noop">Restore</button></div>
+    <div class="research-tabs" data-note="23">${tabs.map(([id,lb])=>`<button class="research-tab${S.rsTab===id?' active':''}" data-act="rs-tab" data-v="${id}">${lb}</button>`).join('')}</div>
+    <div class="research-panel">${panel}</div></div>`;
+}
+
+/* 生产 Graph 逐行移植自 frontend/src/research_graph.ts（力导向布局、绿节点、灰边、悬停绿边、虚线反证边、拖拽/平移/缩放） */
+let graphRt=null;
+function stopGraph(){if(graphRt){graphRt.stop();graphRt=null;}}
+function mountGraph(){
+  stopGraph();
+  const canvas=$('#rsGraphCanvas'), detail=$('#rsGraphDetail');
+  if(!canvas||!detail) return;
+  const css=getComputedStyle(document.documentElement);
+  const colors={bg:css.getPropertyValue('--bg').trim()||'#181818',faint:css.getPropertyValue('--faint').trim()||'#4a4a4a',
+    muted:css.getPropertyValue('--muted').trim()||'#6b6b6b',text:css.getPropertyValue('--text').trim()||'#e6e6e6',
+    textDim:css.getPropertyValue('--text-dim').trim()||'#a0a0a0',ok:css.getPropertyValue('--ok-dot').trim()||'#78a58b'};
+  const hashUnit=v=>{let h=2166136261,t=String(v||'');for(let i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619)}return((h>>>0)%10000)/10000};
+  const layerY=n=>n.kind==='concept'?-130:n.kind==='source_url'?145:n.kind==='counterpoint'?90:(n.kind==='synthesis'||n.kind==='decision')?-20:55;
+  const nodeR=n=>{const b=n.kind==='source_url'?3:n.kind==='concept'?5:4.2;return Math.max(2.8,Math.min(11,b+Math.sqrt(Number(n.weight||1))*1.6))};
+  const visibleNodes=RS_RUN.graphNodes.filter(n=>n.depth<=S.rsDepth);
+  const nodes=visibleNodes.map((n,i)=>{const seed=hashUnit(n.id||i),sp=72+hashUnit(n.id+':x')*180,ly=layerY(n);
+    return {...n,x:(seed>.5?1:-1)*sp*(0.35+hashUnit(n.id+':s')),y:ly+(hashUnit(n.id+':y')-0.5)*48,layerY:ly,vx:0,vy:0,fixed:false};});
+  const byId=new Map(nodes.map(n=>[n.id,n]));
+  const edges=RS_RUN.graphEdges.map(e=>({...e,source:byId.get(e.src),target:byId.get(e.dst)})).filter(e=>e.source&&e.target);
+  const neighbors=new Map();
+  edges.forEach(e=>{if(!neighbors.has(e.src))neighbors.set(e.src,new Set());if(!neighbors.has(e.dst))neighbors.set(e.dst,new Set());neighbors.get(e.src).add(e.dst);neighbors.get(e.dst).add(e.src);});
+  const ctx=canvas.getContext('2d');
+  const st={scale:1,tx:0,ty:0,width:1,height:1,hover:null,selected:nodes.find(n=>n.focus)||null};
+  let frame=0,running=true,still=0,dragNode=null,panning=false,start=null,moved=false,pid=null;
+
+  function setDetail(node){
+    if(!node){detail.innerHTML='<div class="research-graph-detail-meta">Select a node or edge · double-click to open</div>';return;}
+    const meta=[node.kind||'note',node.path||'',node.url||''].filter(Boolean).join(' · ');
+    const act=node.url?`<a class="drawer-btn" style="display:inline-block;margin-top:6px;padding-left:0;text-decoration:none" href="${node.url}" target="_blank" rel="noopener noreferrer">Open source</a>`
+      :(node.id&&!node.virtual&&RS_RUN.notes[node.id]?`<button class="drawer-btn" style="margin-top:6px;padding-left:0" data-act="rs-opennote" data-v="${node.id}">Open in Notes</button>`:'');
+    detail.innerHTML=`<div class="research-graph-detail-title">${node.label||node.id}</div><div class="research-graph-detail-meta">${meta}</div>${node.excerpt?`<div class="research-graph-detail-body">${node.excerpt}</div>`:''}${act}`;
+  }
+  function bounds(){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;nodes.forEach(n=>{x0=Math.min(x0,n.x);y0=Math.min(y0,n.y);x1=Math.max(x1,n.x);y1=Math.max(y1,n.y)});return{cx:(x0+x1)/2,cy:(y0+y1)/2,w:x1-x0,h:y1-y0};}
+  function resetView(){const b=bounds(),sx=st.width/Math.max(220,b.w+120),sy=st.height/Math.max(220,b.h+120);st.scale=Math.max(.45,Math.min(1.25,Math.min(sx,sy)));st.tx=st.width/2-b.cx*st.scale;st.ty=st.height/2-b.cy*st.scale;draw();}
+  function resize(){const r=canvas.getBoundingClientRect(),d=window.devicePixelRatio||1;st.width=Math.max(1,r.width);st.height=Math.max(1,r.height);canvas.width=Math.round(st.width*d);canvas.height=Math.round(st.height*d);ctx.setTransform(d,0,0,d,0,0);if(!st.tx&&!st.ty)resetView();draw();}
+  function step(){
+    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const a=nodes[i],b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y,dist=Math.max(18,Math.hypot(dx,dy)),f=2600/(dist*dist);dx/=dist;dy/=dist;if(!a.fixed){a.vx+=dx*f;a.vy+=dy*f}if(!b.fixed){b.vx-=dx*f;b.vy-=dy*f}}
+    for(const e of edges){const a=e.source,b=e.target,des=e.kind==='cites'?92:118;let dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(1,Math.hypot(dx,dy)),f=(dist-des)*0.012;dx/=dist;dy/=dist;if(!a.fixed){a.vx+=dx*f;a.vy+=dy*f}if(!b.fixed){b.vx-=dx*f;b.vy-=dy*f}}
+    let maxM=0;
+    for(const n of nodes){if(n.fixed)continue;n.vx+=-n.x*0.0025;n.vy+=(n.layerY-n.y)*0.004;n.vx*=0.86;n.vy*=0.86;const sx=Math.max(-6,Math.min(6,n.vx)),sy=Math.max(-6,Math.min(6,n.vy));n.x+=sx;n.y+=sy;maxM=Math.max(maxM,Math.abs(sx),Math.abs(sy));}
+    return maxM;
+  }
+  function draw(){
+    ctx.clearRect(0,0,st.width,st.height); ctx.fillStyle=colors.bg; ctx.fillRect(0,0,st.width,st.height);
+    ctx.save(); ctx.translate(st.tx,st.ty); ctx.scale(st.scale,st.scale);
+    for(const e of edges){
+      const ha=st.hover&&(e.src===st.hover.id||e.dst===st.hover.id), sa=!ha&&st.selected&&(e.src===st.selected.id||e.dst===st.selected.id), act=ha||sa;
+      ctx.save(); ctx.globalAlpha=ha?.95:sa?.78:(e.kind==='cites'?.24:.36);
+      ctx.strokeStyle=ha?colors.ok:sa?colors.text:colors.faint; ctx.lineWidth=act?1.35:(e.kind==='cites'?.75:1);
+      if(e.kind==='contradicts'||e.kind==='refuted_by') ctx.setLineDash([5,5]);
+      ctx.beginPath(); ctx.moveTo(e.source.x,e.source.y); ctx.lineTo(e.target.x,e.target.y); ctx.stroke();
+      if(e.detail){const ang=Math.atan2(e.target.y-e.source.y,e.target.x-e.source.x),rr=nodeR(e.target)+3,x=e.target.x-Math.cos(ang)*rr,y=e.target.y-Math.sin(ang)*rr;
+        ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(x-Math.cos(ang-.45)*7,y-Math.sin(ang-.45)*7);ctx.lineTo(x,y);ctx.lineTo(x-Math.cos(ang+.45)*7,y-Math.sin(ang+.45)*7);ctx.stroke();}
+      ctx.restore();
+    }
+    const hot=st.hover||st.selected;
+    for(const n of nodes){
+      const conn=hot&&(hot.id===n.id||(neighbors.get(hot.id)||new Set()).has(n.id)), hov=st.hover&&st.hover.id===n.id, r=nodeR(n);
+      ctx.save(); ctx.globalAlpha=hot&&!conn?.28:1; ctx.fillStyle=colors.ok; ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2); ctx.fill();
+      if(conn){ctx.strokeStyle=hov?colors.ok:colors.text;ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(n.x,n.y,r+3,0,Math.PI*2);ctx.stroke();}
+      ctx.restore();
+    }
+    for(const n of nodes){
+      const conn=hot&&(hot.id===n.id||(neighbors.get(hot.id)||new Set()).has(n.id));
+      if(!(n.focus||conn||Number(n.weight||0)>=2.4)) continue;
+      ctx.save(); ctx.fillStyle=conn||n.focus?colors.text:colors.textDim; const fs=Math.max(10.5,11.5/st.scale);
+      ctx.font=`${fs}px ${getComputedStyle(document.body).fontFamily}`; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.globalAlpha=conn||n.focus?.95:.72;
+      ctx.fillText(String(n.label||n.id).slice(0,32),n.x,n.y+nodeR(n)+5); ctx.restore();
+    }
+    ctx.restore();
+  }
+  function animate(){if(!running)return;const m=step();draw();if(!dragNode&&m<0.35){if(++still>=30){frame=0;return}}else still=0;frame=requestAnimationFrame(animate);}
+  function wake(){if(!running||frame)return;still=0;frame=requestAnimationFrame(animate);}
+  const pt=e=>{const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
+  const wp=e=>{const p=pt(e);return{x:(p.x-st.tx)/st.scale,y:(p.y-st.ty)/st.scale,sx:p.x,sy:p.y}};
+  const nodeAt=e=>{const p=wp(e);for(let i=nodes.length-1;i>=0;i--){const n=nodes[i];if(Math.hypot(n.x-p.x,n.y-p.y)<=nodeR(n)+5/st.scale)return n}return null};
+  const edgeAt=e=>{const p=wp(e);for(const ed of edges){if(!ed.detail)continue;const a=ed.source,b=ed.target,dx=b.x-a.x,dy=b.y-a.y,l=dx*dx+dy*dy,t=l?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/l)):0;if(Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy)<=7/st.scale)return ed}return null};
+  function down(e){if(e.button!==0||pid!==null)return;e.preventDefault();pid=e.pointerId;const p=wp(e),hit=nodeAt(e);start={...p,tx:st.tx,ty:st.ty};moved=false;
+    if(hit){dragNode=hit;hit.fixed=true;hit.vx=hit.vy=0;}else panning=true;canvas.classList.add('dragging');canvas.setPointerCapture(e.pointerId);wake();}
+  function move(e){if(pid!==null&&pid!==e.pointerId)return;const p=wp(e);if(start&&Math.hypot(p.sx-start.sx,p.sy-start.sy)>4)moved=true;
+    if(dragNode){dragNode.x=p.x;dragNode.y=p.y;dragNode.vx=dragNode.vy=0;wake();draw();return;}
+    if(panning&&start){st.tx=start.tx+(p.sx-start.sx);st.ty=start.ty+(p.sy-start.sy);draw();return;}
+    const hit=nodeAt(e);if(hit!==st.hover){st.hover=hit;draw();}}
+  function finish(){const c=pid;pid=null;if(dragNode)dragNode.fixed=false;dragNode=null;panning=false;canvas.classList.remove('dragging');try{if(c!==null&&canvas.hasPointerCapture(c))canvas.releasePointerCapture(c)}catch{}start=null;draw();wake();}
+  function up(e){if(e.pointerId!==pid)return;const hit=nodeAt(e),sel=!moved;finish();
+    if(sel){st.selected=hit;setDetail(hit);if(!hit){const ed=edgeAt(e);if(ed){st.selected=ed.source;setDetail({id:`${ed.src}->${ed.dst}`,virtual:true,label:`${ed.source.label} → ${ed.target.label}`,kind:ed.kind,excerpt:ed.detail});}}}draw();}
+  function wheel(e){e.preventDefault();const p=pt(e),bf={x:(p.x-st.tx)/st.scale,y:(p.y-st.ty)/st.scale},f=e.deltaY>0?.9:1.1;st.scale=Math.max(.35,Math.min(2.8,st.scale*f));st.tx=p.x-bf.x*st.scale;st.ty=p.y-bf.y*st.scale;draw();}
+  function dbl(e){const h=nodeAt(e);if(!h)return;if(h.url)window.open(h.url,'_blank','noopener,noreferrer');else if(RS_RUN.notes[h.id]){S.rsFocusNote=h.id;S.rsTab='notes';renderWs();}}
+  const ro=new ResizeObserver(resize); ro.observe(canvas);
+  canvas.addEventListener('pointerdown',down); canvas.addEventListener('pointermove',move); canvas.addEventListener('pointerup',up);
+  canvas.addEventListener('pointercancel',finish); canvas.addEventListener('wheel',wheel,{passive:false}); canvas.addEventListener('dblclick',dbl);
+  for(let k=0;k<45;k++) step();
+  resize(); setDetail(st.selected); animate();
+  graphRt={reset:resetView,stop(){running=false;cancelAnimationFrame(frame);ro.disconnect();canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',finish);canvas.removeEventListener('wheel',wheel);canvas.removeEventListener('dblclick',dbl);}};
+}
+
+/* ---------- 设置 ---------- */
+function dirtyCount(){
+  let c=0;
+  SOURCES.forEach(s=>{ if(ON[s.id]!==BASE_ON[s.id]) c++;
+    s.models.forEach(m=>{ if(SEL[s.id].includes(m)!==BASE_SEL[s.id].includes(m)) c++; }); });
+  if(S.font!=='Standard') c++;
+  return c;
+}
+function renderSettings(){
+  const d=dirtyCount();
+  $('#modal').innerHTML=`<div class="m-h"><h2>Settings</h2><button class="ib" data-act="close-settings" data-tip="Close" data-kbd="Esc">${ic('x',15)}</button></div>
+  <div class="m-b">
+    <div class="sec-t">Appearance</div>
+    <div class="set-row"><span>Font size<span class="sub">Applies to chat and panels</span></span><span class="seg" data-note="20">${['Standard','Large','Extra'].map(f=>`<button class="${S.font===f?'on':''}" data-act="font" data-v="${f}">${f}</button>`).join('')}</span></div>
+    <div class="sec-t">Models</div>
+    <p style="margin:0 0 10px;font-size:11.5px;color:var(--text-dim)">Only selected models appear in the composer. Websites open when you send a message.</p>
+    ${SOURCES.map(s=>{const sel=SEL[s.id].length; const on=ON[s.id]&&sel>0;
+      return `<div class="src${S.srcOpen[s.id]?' open':''}"><div class="src-h" data-act="src" data-id="${s.id}"><span class="cv">${ic('chevR',12)}</span><span class="nm">${s.name}</span><span class="cnt">${sel} of ${s.models.length} models</span><button class="sw${on?' on':''}" data-act="sw" data-id="${s.id}" ${sel?'':'disabled'} data-tip="${sel?(on?'Turn off':'Turn on'):'Select a model first'}"></button></div>
+      <div class="src-b"><div class="src-tools"><button class="lk" data-act="selall" data-id="${s.id}">Select all</button><button class="lk" data-act="selnone" data-id="${s.id}">Clear</button>${s.id!=='web'?`<span class="spacer"></span><button class="lk">Refresh models</button>`:''}</div>
+      ${s.models.map(m=>`<label class="ck"><input type="checkbox" data-src="${s.id}" value="${m}" ${SEL[s.id].includes(m)?'checked':''}>${m}</label>`).join('')}
+      ${s.id==='local'?`<div style="margin-top:6px"><button class="lk" style="margin-left:-6px">Connection…</button></div>`:''}</div></div>`}).join('')}
+  </div>
+  <div class="m-f" data-note="21"><span class="info">${d?`${d} unsaved change${d>1?'s':''}`:'No changes'}</span><button class="btn" data-act="close-settings">Cancel</button><button class="btn primary" data-act="save-settings" ${d?'':'disabled'}>Save changes</button></div>`;
+}
+
+/* ---------- 菜单 ---------- */
+const menu=$('#menu');
+function openMenu(anchor,html){
+  menu.innerHTML=html; menu.classList.add('show');
+  const ar=app.getBoundingClientRect(), r=anchor.getBoundingClientRect();
+  const mw=menu.offsetWidth, mh=menu.offsetHeight;
+  let left=Math.min(r.left-ar.left, ar.width-mw-8); left=Math.max(8,left);
+  menu.style.left=left+'px';
+  if(r.top-ar.top>ar.height/2){menu.style.top='';menu.style.bottom=(ar.bottom-r.top+6)+'px';}
+  else{menu.style.bottom='';menu.style.top=(r.bottom-ar.top+6)+'px';}
+  void mh;
+}
+function closeMenu(){menu.classList.remove('show')}
+const mi=(label,act,v,check,k)=>`<button class="mi" data-act="${act}"${v!=null?` data-v="${v}"`:''}>${label}${check?`<span class="ck2">${ic('check',14)}</span>`:k?`<span class="k">${k}</span>`:''}</button>`;
+function menuModel(){
+  let h='';
+  SOURCES.forEach(s=>{ if(!(ON[s.id]&&SEL[s.id].length)) return;
+    h+=`<div class="mlabel">${s.name}</div>`+SEL[s.id].map(m=>mi(`<span class="dot"></span>${m}`,'pick-model',m,m===S.model)).join(''); });
+  return h+`<div class="msep"></div>`+mi('Manage models…','settings',null,false,'Ctrl ,');
+}
+const menuEffort=()=>`<div class="mlabel">Thinking effort</div>`+['Off','Low','Med','High'].map(e=>mi(e,'pick-effort',e,e===S.effort)).join('');
+const menuFolder=()=>`<div class="mlabel">Recent</div>`+['snake-game','codey','blog-site'].map(f=>mi(`${ic('folder',14)}${f}`,'pick-folder',f,f===S.folder)).join('')+`<div class="msep"></div>`+mi('Choose folder…','noop')+mi('No folder','pick-folder','',!S.folder);
+const menuAllow=()=>mi('Always allow <span class="mono">pytest -q</span> in this chat','allow')+mi('Always allow in this project','allow')+`<div class="msep"></div>`+mi('Manage saved permissions…','noop');
+const menuWsAdd=()=>{
+  const closed=WS_PANELS.filter(p=>!S.wsTabs.includes(p.id));
+  const open=WS_PANELS.filter(p=>S.wsTabs.includes(p.id));
+  let h='';
+  if(closed.length) h+=`<div class="mlabel">Open panel</div>`+closed.map(p=>mi(p.label,'ws-add',p.id)).join('');
+  if(open.length) h+=(closed.length?'<div class="msep"></div>':'')+`<div class="mlabel">Already open</div>`+open.map(p=>mi(p.label,'ws-add',p.id,true)).join('');
+  return h;
+};
+</script>
+
+<script>
+/* ---------- 渲染 & 状态 ---------- */
+let cardObs=null;
+function renderChat(){
+  $('#chatIn').innerHTML=chatHTML(); updateElapsed();
+  if(base()!=='empty') chatArea.scrollTop=chatArea.scrollHeight;
+  observeCard(); placePinsSoon();
+}
+function render(){
+  $('#sb').innerHTML=sidebarHTML(); $('#top').innerHTML=topHTML();
+  renderChat(); updateComposer(); renderWs(); renderSettings();
+  requestAnimationFrame(()=>{placeComposer(); pond.toggle(base()==='empty'); placePinsSoon();});
+}
+function setState(name,o={}){
+  clearTimers(); closeMenu();
+  S.state=name; S.procOpen=null; S.cmdOpen=false; S.phase=o.phase||null; S.runStep=o.runStep??3; S.flow=!!o.flow;
+  if(!o.flow){S.t0=Date.now()-38000; S.denied=false; S.pending=[];}
+  if(name!=='done'&&name!=='workspace'&&name!=='settings'){S.undone=false;S.undoAsk=false;S.restoreAsk=false;}
+  if(name==='workspace'){if(!S.wsTabs.includes('changes'))S.wsTabs.unshift('changes');S.wsTab='changes';app.style.setProperty('--wsw','420px');}
+  if(name==='research'){S.research=true;if(!S.wsTabs.includes('research'))S.wsTabs.push('research');S.wsTab='research';S.rsTab=o.rsTab||'graph';app.style.setProperty('--wsw','480px');}
+  if(name==='settings'){SEL=JSON.parse(JSON.stringify(BASE_SEL));ON={...BASE_ON};S.font='Standard';}
+  app.classList.toggle('ws-open',name==='workspace'||name==='research'||(!!o.keepWs&&app.classList.contains('ws-open')));
+  $('#ovl').classList.toggle('show',name==='settings');
+  render();
+  $$('.st-tab').forEach(t=>t.classList.toggle('on',t.dataset.state===name));
+  renderNotes();
+}
+function updateElapsed(){const s=fmt((Date.now()-S.t0)/1000);$$('.elapsed').forEach(e=>e.textContent=s)}
+setInterval(()=>{if(isRunning())updateElapsed()},1000);
+
+function startFlow(text){
+  S.userText=text||S.userText;
+  setState('running',{runStep:0,flow:true}); S.t0=Date.now(); updateElapsed();
+  [1,2,3].forEach((k,i)=>later(()=>{S.runStep=k;renderChat();},1000*(i+1)));
+  later(()=>setState('approval',{flow:true}),4200);
+}
+function allow(){setState('running',{phase:'test',flow:true});later(()=>setState('done',{flow:true}),1800)}
+
+/* ---------- 事件 ---------- */
+ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';updateSend()});
+ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();doSend()}});
+function doSend(){
+  const t=ta.value.trim();
+  if(!t){ if(isRunning()){setState('done',{flow:true});} return; }
+  ta.value=''; ta.style.height='auto';
+  if(isRunning()){S.pending.push(t);updateComposer();placePinsSoon();return;}
+  startFlow(t);
+}
+app.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');
+  if(!e.target.closest('#menu')&&!(el&&/^menu-/.test(el.dataset.act))) closeMenu();
+  if(!el) return;
+  const a=el.dataset.act, v=el.dataset.v;
+  switch(a){
+    case 'toggle-sb': app.classList.toggle('sb-off'); setTimeout(placePinsSoon,240); break;
+    case 'ws': app.classList.toggle('ws-open'); setTimeout(placePinsSoon,240); break;
+    case 'new-chat': setState('empty'); break;
+    case 'settings': closeMenu(); setState('settings'); break;
+    case 'close-settings': case 'save-settings': $('#ovl').classList.remove('show'); setState('done'); break;
+    case 'research': S.research=!S.research; updateComposer(); renderWs(); placePinsSoon(); break;
+    case 'send': doSend(); break;
+    case 'menu-model': openMenu(el,menuModel()); break;
+    case 'menu-effort': openMenu(el,menuEffort()); break;
+    case 'menu-folder': openMenu(el,menuFolder()); break;
+    case 'menu-allow': openMenu(el,menuAllow()); break;
+    case 'menu-wsadd': openMenu(el,menuWsAdd()); break;
+    case 'ws-add': if(!S.wsTabs.includes(v))S.wsTabs.push(v); S.wsTab=v; closeMenu(); app.classList.add('ws-open'); renderWs(); setTimeout(placePinsSoon,240); break;
+    case 'tab-close': {const i=S.wsTabs.indexOf(v); if(i>=0)S.wsTabs.splice(i,1); if(S.wsTab===v)S.wsTab=S.wsTabs[Math.max(0,i-1)]||''; renderWs(); placePinsSoon(); break;}
+    case 'go-research': setState('research'); break;
+    case 'rs-tab': S.rsTab=v; if(S.state!=='research')setState('research',{rsTab:v}); else{if(!S.wsTabs.includes('research'))S.wsTabs.push('research');S.wsTab='research';app.classList.add('ws-open');renderWs();setTimeout(placePinsSoon,240);} break;
+    case 'rs-depth': S.rsDepth=+v; renderWs(); placePinsSoon(); break;
+    case 'rs-reset': if(graphRt)graphRt.reset(); break;
+    case 'rs-opennote': S.rsFocusNote=v; S.rsTab='notes'; renderWs(); placePinsSoon(); break;
+    case 'pick-model': S.model=v; closeMenu(); updateComposer(); break;
+    case 'pick-effort': S.effort=v; closeMenu(); updateComposer(); break;
+    case 'pick-folder': S.folder=v; closeMenu(); updateComposer(); break;
+    case 'noop': closeMenu(); break;
+    case 'proc': {const p=el.closest('.proc'); S.procOpen=!p.classList.contains('open'); p.classList.toggle('open',S.procOpen); placePinsSoon(); break;}
+    case 'cmd': S.cmdOpen=!S.cmdOpen; renderChat(); break;
+    case 'allow': closeMenu(); allow(); break;
+    case 'deny': setState('done',{flow:true}); S.denied=true; renderChat(); break;
+    case 'jump': {const c=$('#appr'); if(c){c.scrollIntoView({behavior:'smooth',block:'center'}); c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash');} break;}
+    case 'pend-del': S.pending.splice(+el.dataset.i,1); if(!S.pending.length) S.flow=true; updateComposer(); break;
+    case 'review': if(!S.wsTabs.includes('changes'))S.wsTabs.unshift('changes'); S.wsTab='changes'; app.classList.add('ws-open'); renderWs(); setTimeout(placePinsSoon,240); break;
+    case 'undo': S.undoAsk=true; renderChat(); break;
+    case 'undo-cancel': S.undoAsk=false; renderChat(); break;
+    case 'undo-yes': S.undoAsk=false; S.undone=true; render(); break;
+    case 'tab': S.wsTab=v; renderWs(); placePinsSoon(); break;
+    case 'file': S.open[el.dataset.p]=!S.open[el.dataset.p]; renderWs(); placePinsSoon(); break;
+    case 'restore': if(!S.undone){S.restoreAsk=true; renderWs();} break;
+    case 'restore-cancel': S.restoreAsk=false; renderWs(); break;
+    case 'restore-yes': S.restoreAsk=false; S.undone=true; render(); break;
+    case 'font': S.font=v; renderSettings(); break;
+    case 'src': if(e.target.closest('.sw')) break; S.srcOpen[el.dataset.id]=!S.srcOpen[el.dataset.id]; renderSettings(); placePinsSoon(); break;
+    case 'sw': e.stopPropagation(); ON[el.dataset.id]=!ON[el.dataset.id]; renderSettings(); break;
+    case 'selall': {const s=SOURCES.find(x=>x.id===el.dataset.id); SEL[s.id]=[...s.models]; ON[s.id]=true; renderSettings(); break;}
+    case 'selnone': SEL[el.dataset.id]=[]; ON[el.dataset.id]=false; renderSettings(); break;
+  }
+});
+app.addEventListener('change',e=>{
+  const c=e.target; if(!c.dataset||!c.dataset.src) return;
+  const id=c.dataset.src, set=new Set(SEL[id]); c.checked?set.add(c.value):set.delete(c.value);
+  SEL[id]=SOURCES.find(s=>s.id===id).models.filter(m=>set.has(m));
+  if(SEL[id].length===0) ON[id]=false; else if(c.checked&&!ON[id]) ON[id]=true;
+  renderSettings();
+});
+app.addEventListener('dblclick',e=>{if(e.target.closest('.ws-resize')){app.style.setProperty('--wsw','420px');placePinsSoon();}});
+app.addEventListener('pointerdown',e=>{
+  const h=e.target.closest('.ws-resize'); if(!h) return;
+  e.preventDefault(); h.setPointerCapture(e.pointerId); app.style.transition='none';
+  const ar=app.getBoundingClientRect();
+  const mv=ev=>{const w=Math.max(340,Math.min(640,ar.right-ev.clientX)); app.style.setProperty('--wsw',w+'px');};
+  const up=()=>{h.removeEventListener('pointermove',mv);h.removeEventListener('pointerup',up);app.style.transition='';placePinsSoon();};
+  h.addEventListener('pointermove',mv); h.addEventListener('pointerup',up);
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenu(); if(S.state==='settings') setState('done');}});
+$('#stTabs').addEventListener('click',e=>{const b=e.target.closest('.st-tab'); if(b){ta.value='';setState(b.dataset.state);}});
+$('#notesToggle').addEventListener('change',e=>{S.notes=e.target.checked; app.classList.toggle('notes-on',S.notes); placePinsSoon();});
+$('#playFlow').addEventListener('click',()=>{
+  setState('empty'); stage.scrollIntoView({behavior:'smooth',block:'center'});
+  const text=S.userText='Fix the snake collision bug — it dies when I turn quickly.'; let i=0; ta.value=''; ta.focus();
+  const tick=()=>{ta.value=text.slice(0,++i); updateSend(); if(i<text.length) S.timers.push(setTimeout(tick,28)); else S.timers.push(setTimeout(doSend,500));};
+  S.timers.push(setTimeout(tick,600));
+});
+
+/* 审批卡离屏胶囊 */
+function observeCard(){
+  if(cardObs) cardObs.disconnect();
+  const c=$('#appr'), j=$('#jump'); j.classList.remove('show'); if(!c) return;
+  cardObs=new IntersectionObserver(([en])=>{j.classList.toggle('show',!en.isIntersecting)},{root:chatArea,threshold:.3});
+  cardObs.observe(c);
+}
+
+/* ---------- 标注 ---------- */
+let pinRaf=0;
+function placePinsSoon(){cancelAnimationFrame(pinRaf);pinRaf=requestAnimationFrame(placePins)}
+function placePins(){
+  $$('.pin',stage).forEach(p=>p.remove()); if(!S.notes) return;
+  const sr=stage.getBoundingClientRect(), ids=STATE_NOTES[S.state], ar=app.getBoundingClientRect(), seen=new Set();
+  $$('[data-note]',app).forEach(el=>{
+    const n=+el.dataset.note; if(!ids.includes(n)||seen.has(n)) return;
+    const r=el.getBoundingClientRect(); if(!r.width||!r.height) return;
+    if(r.bottom<ar.top+4||r.top>ar.bottom-4||r.right<ar.left||r.left>ar.right) return;
+    if(S.state==='settings'&&!el.closest('#ovl')) return;
+    seen.add(n);
+    const p=document.createElement('div'); p.className='pin'; p.textContent=n; p.dataset.n=n;
+    p.style.left=Math.max(2,r.left-sr.left-10)+'px'; p.style.top=Math.max(2,r.top-sr.top-10)+'px';
+    p.onclick=()=>{focusNote(n);flashEl(el)}; stage.appendChild(p);
+  });
+}
+function flashEl(el){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')}
+function focusNote(n){$$('.note').forEach(x=>x.classList.toggle('on',+x.dataset.n===n));const t=$(`.note[data-n="${n}"]`);t&&t.scrollIntoView({behavior:'smooth',block:'nearest'})}
+function renderNotes(){
+  const ids=STATE_NOTES[S.state];
+  $('#notes').innerHTML=`<h4>本状态的改动说明 · ${ids.length} 项</h4>`+ids.map(n=>{const x=NOTES[n];return `<div class="note" data-n="${n}"><span class="num">${n}</span><div><h5>${x.t}</h5>${x.p?`<p><b>问题</b>${x.p}</p>`:''}<p><b>改法</b>${x.s}</p>${x.w?`<p class="why">${x.w}</p>`:''}</div></div>`}).join('');
+}
+$('#notes').addEventListener('click',e=>{const t=e.target.closest('.note'); if(!t) return; const n=+t.dataset.n; focusNote(n);
+  const el=$$('[data-note]',app).find(x=>+x.dataset.note===n&&x.getBoundingClientRect().width); el&&flashEl(el);});
+chatArea.addEventListener('scroll',placePinsSoon,{passive:true});
+app.addEventListener('scroll',placePinsSoon,true);
+window.addEventListener('resize',()=>{placeComposer();placePinsSoon()});
+app.addEventListener('transitionend',e=>{if(e.target===app||e.target.id==='cw')placePinsSoon()});
+
+/* ---------- tooltip ---------- */
+const tip=$('#tip'); let tipT=0, tipEl=null;
+document.addEventListener('mouseover',e=>{
+  const el=e.target.closest('[data-tip]'); if(el===tipEl) return;
+  tipEl=el; clearTimeout(tipT); tip.classList.remove('show'); if(!el||!el.dataset.tip) return;
+  tipT=setTimeout(()=>{
+    tip.innerHTML=`<span>${el.dataset.tip}</span>${el.dataset.kbd?`<span class="k">${el.dataset.kbd}</span>`:''}`;
+    const r=el.getBoundingClientRect(); tip.classList.add('show');
+    const w=tip.offsetWidth, h=tip.offsetHeight;
+    let x=r.left+r.width/2-w/2; x=Math.max(6,Math.min(innerWidth-w-6,x));
+    let y=r.bottom+6; if(y+h>innerHeight-6) y=r.top-h-6;
+    tip.style.left=x+'px'; tip.style.top=y+'px';
+  },450);
+});
+document.addEventListener('mousedown',()=>{clearTimeout(tipT);tip.classList.remove('show')});
+
+/* ---------- 字符池塘：逐行移植自 frontend/src/character_pond.ts（仅去掉类型标注） ---------- */
+const pond=(()=>{
+  const canvas=$('#pond'), context=canvas.getContext('2d');
+  const chars='0123456789.:;+=-';
+  let cells=[], ripples=[], width=1, height=1, ratio=1, ink='', green='';
+  let frame=0, lastFrame=0, clock=0, nextAmbient=0.25, inView=true, showing=false, fadeTimer=0, pointer;
+  const empty=()=>main.classList.contains('empty');
+  const hash=(a,b)=>{const v=Math.sin(a*127.1+b*311.7)*43758.5453;return v-Math.floor(v)};
+  function pause(){cancelAnimationFrame(frame);frame=0;pointer=undefined}
+  function clear(){context.clearRect(0,0,width,height)}
+  function ripple(x,y,gain,speed){ripples.push({x,y,born:clock,gain,speed});if(ripples.length>18)ripples.splice(0,ripples.length-18)}
+  function draw(time){
+    frame=0;
+    if(document.hidden||!inView||!showing) return;
+    if(time-lastFrame<32){frame=requestAnimationFrame(draw);return}
+    clock+=Math.min(65,time-lastFrame||33)/1000; lastFrame=time;
+    if(empty()&&clock>=nextAmbient){
+      ripple(width*(0.1+Math.random()*0.8),height*(0.08+Math.random()*0.82),0.8+Math.random()*0.25,61);
+      nextAmbient=clock+2.8*(0.7+Math.random()*0.7);
+    }
+    ripples=ripples.filter(w=>clock-w.born<7.5);
+    const waves=ripples.map(w=>{const age=clock-w.born;return{...w,radius:age*w.speed,spread:29+age*3,
+      decay:(w.gain*Math.exp(-age/3.6)*Math.min(1,age/0.2))/Math.sqrt(1+age*0.26)}});
+    clear();
+    context.font='11px Consolas, "SFMono-Regular", monospace'; context.textBaseline='middle';
+    for(const cell of cells){
+      let elevation=0, offsetX=0, offsetY=0;
+      for(const wave of waves){
+        const dx=cell.x-wave.x, dy=cell.y-wave.y;
+        const distance=Math.hypot(dx,dy), front=distance-wave.radius;
+        if(Math.abs(front)>wave.spread*2.5) continue;
+        const d=Math.cos(front*0.18)*Math.exp((-front*front)/(2*wave.spread*wave.spread))*wave.decay;
+        elevation+=d; offsetX+=(dx/Math.max(1,distance))*d*2.1; offsetY+=(dy/Math.max(1,distance))*d*1.8;
+      }
+      const x=cell.x+Math.max(-3,Math.min(3,offsetX)), y=cell.y+Math.max(-3,Math.min(3,offsetY));
+      context.fillStyle=ink; context.globalAlpha=Math.max(0.012,cell.alpha+Math.min(0,elevation)*0.035);
+      context.fillText(cell.character,x,y);
+      if(elevation>0.001){context.fillStyle=green;context.globalAlpha=Math.min(0.82,elevation*0.84);context.fillText(cell.character,x,y)}
+    }
+    context.globalAlpha=1;
+    frame=requestAnimationFrame(draw);
+  }
+  function wake(){if(!frame&&showing&&inView&&!document.hidden){lastFrame=performance.now()-34;frame=requestAnimationFrame(draw)}}
+  function resize(){
+    if(!showing) return;
+    const box=canvas.getBoundingClientRect();
+    width=Math.max(1,box.width); height=Math.max(1,box.height);
+    ratio=Math.min(window.devicePixelRatio||1,1.5);
+    canvas.width=Math.round(width*ratio); canvas.height=Math.round(height*ratio);
+    context.setTransform(ratio,0,0,ratio,0,0);
+    const style=getComputedStyle(canvas); ink=style.color; green=style.getPropertyValue('--pond-green').trim()||'#78a58b';
+    cells=[];
+    for(let y=12,row=0;y<height;y+=22,row++) for(let x=9,col=0;x<width;x+=12,col++){
+      const seed=hash(col,row); if(seed<0.035) continue;
+      cells.push({x,y,character:chars[Math.floor(seed*chars.length)%chars.length],alpha:0.025+hash(row+2,col+8)*0.022});
+    }
+    wake();
+  }
+  function sync(){
+    clearTimeout(fadeTimer);
+    if(empty()){ if(!showing){showing=true;ripples=[];clock=0;nextAmbient=0.25;resize()} wake(); }
+    else if(showing){ fadeTimer=setTimeout(()=>{showing=false;pause();clear();cells=[];ripples=[]},520); }
+  }
+  function move(e){
+    if(document.hidden||!empty()) return;
+    const box=canvas.getBoundingClientRect(), x=e.clientX-box.left, y=e.clientY-box.top;
+    if(x<0||y<0||x>width||y>height) return;
+    const now=performance.now()/1000;
+    if(!pointer){ripple(x,y,0.65,83);pointer={x,y,time:now}}
+    else{const dist=Math.hypot(x-pointer.x,y-pointer.y);
+      if(dist>6&&now-pointer.time>0.045){const count=Math.min(3,Math.max(1,Math.floor(dist/24)));
+        for(let i=1;i<=count;i++) ripple(pointer.x+((x-pointer.x)*i)/count,pointer.y+((y-pointer.y)*i)/count,0.4+Math.min(0.3,dist/200),83);
+        pointer={x,y,time:now};}}
+    wake();
+  }
+  new MutationObserver(sync).observe(main,{attributes:true,attributeFilter:['class']});
+  new ResizeObserver(resize).observe(canvas);
+  new IntersectionObserver(es=>{inView=es[0]?.isIntersecting!==false;inView?wake():pause()}).observe(main);
+  main.addEventListener('pointermove',move,{passive:true});
+  main.addEventListener('pointerleave',()=>{pointer=undefined});
+  document.addEventListener('visibilitychange',()=>{document.hidden?pause():wake()});
+  return {toggle(){sync()}};
+})();
+
+/* ---------- 初始化 ---------- */
+$$('i[data-ic]').forEach(i=>{i.outerHTML=ic(i.dataset.ic,+(i.dataset.s||16))});
+setState('empty');
+</script>
+</body>
+</html>
