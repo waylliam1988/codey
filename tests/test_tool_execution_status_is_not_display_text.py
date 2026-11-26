@@ -8,7 +8,7 @@ import pytest
 
 from codey.agents.runaway_guard import attempt_record
 from codey.operations.kernel.kernel_execution import execute_turn
-from codey.operations.task_execution import _tool_result
+from codey.operations.kernel_result import result_from_outcome
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -22,7 +22,7 @@ def session() -> TaskSession:
 @pytest.mark.parametrize("text", ["ERROR: example in a document", "SKIPPED: quoted text", "NEEDS_OPEN: quoted text"])
 def test_successful_output_prefix_never_changes_execution_or_progress(text: str) -> None:
     call = ToolCall("read_file", {"path": "a.txt"}, "c1")
-    result = _tool_result(call, ToolOutcome(text, True))
+    result = result_from_outcome(call, ToolOutcome(text, True))
     state = session()
     results = execute_turn(state, [call], executors={call.name: lambda _: result}, run_id="status", turn=1)
     assert state.executed[turn_effect_id("status", 1, 0)]["ok"] is True
@@ -32,7 +32,7 @@ def test_successful_output_prefix_never_changes_execution_or_progress(text: str)
 
 def test_structured_failure_without_prefix_remains_failure() -> None:
     call = ToolCall("read_file", {"path": "a.txt"}, "c1")
-    result = _tool_result(call, ToolOutcome("权限不足", False, error_code="permission_denied"))
+    result = result_from_outcome(call, ToolOutcome("权限不足", False, error_code="permission_denied"))
     state = session()
     results = execute_turn(state, [call], executors={call.name: lambda _: result}, run_id="status", turn=1)
     assert state.executed[turn_effect_id("status", 1, 0)]["ok"] is False
@@ -42,7 +42,7 @@ def test_structured_failure_without_prefix_remains_failure() -> None:
 def test_recovered_failure_is_redelivered_without_becoming_success() -> None:
     call = ToolCall("read_file", {"path": "a.txt"}, "c1")
     initial = session()
-    result = _tool_result(call, ToolOutcome("ERROR: refused", False))
+    result = result_from_outcome(call, ToolOutcome("ERROR: refused", False))
     original = execute_turn(initial, [call], executors={call.name: lambda _: result}, run_id="status", turn=1)[0]
     restored = session()
     executor = mock.Mock(side_effect=AssertionError("must not re-execute settled result"))

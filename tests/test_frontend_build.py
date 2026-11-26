@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from codey.app import http_plumbing
+from codey.launcher import releases
 from tools import publish_frontend
 
 
@@ -16,6 +20,27 @@ def test_packaged_frontend_metadata_matches_runtime_file_bytes():
     files = publish_frontend._files(web)
     files.pop("frontend-build.json")
     assert recorded["files"] == files
+
+
+@pytest.mark.parametrize(("platform", "npm"), [("win32", "npm.cmd"), ("linux", "npm")])
+def test_cold_start_rebuilds_frontend_in_the_package_directory(tmp_path, monkeypatch, platform, npm):
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    publisher = tmp_path / "tools" / "publish_frontend.py"
+    publisher.parent.mkdir()
+    publisher.touch()
+    calls = []
+
+    def run(argv, *, cwd, **_options):
+        calls.append((argv, cwd))
+        return subprocess.CompletedProcess(argv, 1 if len(calls) == 1 else 0, "", "")
+
+    monkeypatch.setattr(releases, "sys", SimpleNamespace(executable=sys.executable, platform=platform))
+    monkeypatch.setattr(releases.subprocess, "run", run)
+    releases.ensure_frontend(tmp_path)
+
+    publish = [sys.executable, "-m", "tools.publish_frontend"]
+    assert calls == [([*publish, "--check"], tmp_path), ([npm, "run", "build"], frontend), (publish, tmp_path)]
 
 
 @pytest.mark.parametrize("fault", ["source", "changed", "missing", "extra"])

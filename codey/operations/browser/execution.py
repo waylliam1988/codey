@@ -1,7 +1,6 @@
 """Execute browser tools under the task's captured document and receipt context."""
 from __future__ import annotations
 
-import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
@@ -241,12 +240,12 @@ class BrowserExecutor:
                                     "bytes": stored.stored_bytes, "sha256": stored.sha256})
 
 
-def browser_execution_receipt(result: ToolResult, identity: str, started: float) -> ToolResult:
+def browser_execution_receipt(result: ToolResult, identity: str, elapsed_ms: int) -> ToolResult:
     workspace_proof = _kernel_workspace_identity_of(result)
     raw = result.canonical.get("value")
     delivery = decode_json_object(raw).get("delivery") if isinstance(raw, dict) else None
     observed = replace(result, audit={**result.audit, "browser_execution": {
-        "effect_ref": identity, "elapsed_ms": int((time.monotonic() - started) * 1000),
+        "effect_ref": identity, "elapsed_ms": elapsed_ms,
         "phase": "unknown" if delivery == "uncertain" else "finished"}})
     if workspace_proof is not None:
         return _with_trusted_workspace_state(observed, revision=workspace_proof.revision,

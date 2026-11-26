@@ -682,14 +682,15 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
             browser_context = browser_invocation(identity, durable=durable if isinstance(durable, DurableSession) else None,
                 store=managed_outputs, session_id=durable.task(run_id).conversation_id if isinstance(durable, DurableSession) else "",
                 run_id=run_id)
-            started = time.monotonic()
+            browser_started = time.monotonic() if call.name.startswith("browser_") else None
             with invocation_scope(browser_context):
                 result, ok, exit_code = tool_operation.execute_tool_operation(session, call, delegate=delegate, runnable=runnable,
                     turn=active_turn, tool_index=base_index + offset, project_path=project_path,
                     workspace_revision_store=workspace_revision_store, snapshot=context.snapshot,
                     workspace_ignored_paths=workspace_ignored_paths)
-            if call.name.startswith("browser_"):
-                result = browser_execution_receipt(result, identity, started)
+            if browser_started is not None:
+                elapsed_ms = int((time.monotonic() - browser_started) * 1000)
+                result = browser_execution_receipt(result, identity, elapsed_ms)
             edit = prepare_edit_settlement(
                 session, call, result, ok, project_path=project_path, execution_evidence=execution_evidence,
                 workspace_ignored_paths=workspace_ignored_paths, workspace_revision_store=workspace_revision_store,

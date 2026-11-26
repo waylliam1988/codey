@@ -186,9 +186,9 @@ def ensure_frontend(source: Path) -> None:
     if not publish.is_file():
         raise ControlError("FRONTEND_BUILD_FAILED", "Frontend sources exist but the publisher is unavailable")
 
-    def run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+    def run(argv: list[str], *, timeout: int, cwd: Path = source) -> subprocess.CompletedProcess[str]:
         try:
-            return subprocess.run(argv, cwd=source, stdin=subprocess.DEVNULL,
+            return subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL,
                                   capture_output=True, text=True, encoding="utf-8",
                                   timeout=timeout, check=False,
                                   creationflags=CREATE_NO_WINDOW)
@@ -199,10 +199,11 @@ def ensure_frontend(source: Path) -> None:
     check = run([sys.executable, "-m", "tools.publish_frontend", "--check"], timeout=60)
     if check.returncode == 0:
         return
-    build = run(["npm", "run", "build"], timeout=300)
+    build_command = ["npm.cmd" if sys.platform == "win32" else "npm", "run", "build"]
+    build = run(build_command, timeout=300, cwd=frontend)
     if build.returncode != 0:
         raise ControlError("FRONTEND_BUILD_FAILED", "Frontend build failed",
-                           details={"command": ["npm", "run", "build"],
+                           details={"command": build_command,
                                     "stdout": (build.stdout or "")[-4000:],
                                     "stderr": (build.stderr or "")[-4000:]})
     publish_result = run([sys.executable, "-m", "tools.publish_frontend"], timeout=60)
